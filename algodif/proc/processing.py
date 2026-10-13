@@ -435,7 +435,7 @@ def calibrate_energy_1d(list_data, reference_energies, energy_step,
     if zero_left > 0:
         list_data[:zero_left] = 0
     if zero_right == 0:
-        zero_right == npoint - 1
+        zero_right = npoint - 1
     list_data[zero_right:] = 0
     list_fact = np.zeros(fit_order + 1, dtype=np.float32)
     if match_peaks_para is None:

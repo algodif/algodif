@@ -428,11 +428,11 @@ def make_folder_name(folder_path, name_prefix="Output", zero_prefix=5):
     existing_folders = list(folder_path.glob(f"{scan_name_prefix}*"))
     num_folder_exist = len(existing_folders)
     num_folder_new = num_folder_exist + 1
-    name_tmp = f"{num_folder_new: 0{zero_prefix}}"
+    name_tmp = f"{num_folder_new:0{zero_prefix}}"
     scan_name = scan_name_prefix + name_tmp
     while (folder_path / scan_name).is_dir():
         num_folder_new += 1
-        name_tmp = f"{num_folder_new: 0{zero_prefix}}"
+        name_tmp = f"{num_folder_new:0{zero_prefix}}"
         scan_name = scan_name_prefix + name_tmp
     return scan_name
 
@@ -458,7 +458,7 @@ def make_file_name(file_path):
     if file_path.exists():
         nfile = 0
         while True:
-            name_add = f"_{nfile: 04d}"
+            name_add = f"_{nfile:04d}"
             new_file_name = f"{file_base}{name_add}{file_ext}"
             new_file_path = parent_dir / new_file_name
             if new_file_path.exists():

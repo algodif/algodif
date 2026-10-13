@@ -75,7 +75,7 @@ def remove_background_based_als(list_data, ld=1e6, weight=0.05, num_iter=10):
         raise ValueError("Input must be a 1D array!!!")
     size = len(list_data)
     D = sparse.diags([1, -2, 1], [0, 1, 2], shape=(size - 2, size),
-                     format="csc")
+                     format="csc", dtype=None)
     w = np.ones(size)
     z = 0.0
     for _ in range(num_iter):
@@ -115,7 +115,7 @@ def remove_background_based_arpls(list_data, ld=1e5, weight=0.05, num_iter=10):
         raise ValueError("Input must be a 1D array!!!")
     size = len(list_data)
     D = sparse.diags([1, -2, 1], [0, 1, 2], shape=(size - 2, size),
-                     format="csc")
+                     format="csc", dtype=None)
     H = ld * (D.T @ D)
     w = np.ones(size)
     z = 0.0
