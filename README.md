@@ -88,6 +88,9 @@ can be organized and launched through the [script-runner GUI](https://pypi.org/p
 
 ![img](./figs/eddt_gui.png)
 
+![multi_lines_viewer](./GUIs_CLIs/figs/fig5_multi_lines_viewer.png)
+
+![4d_viewer](./GUIs_CLIs/figs/fig8_4d_rendering.png)
 
 Author
 ------
