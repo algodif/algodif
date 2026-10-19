@@ -27,16 +27,20 @@ Module for I/O tasks:
     -   Get file names, make file/folder name.
 """
 
+import os
 import csv
 import json
 import platform
+import datetime
 from pathlib import Path
 from fnmatch import fnmatchcase
 from collections import deque
 import h5py
 import numpy as np
 from PIL import Image
-import matplotlib.pyplot as plt
+import matplotlib
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 
 PIPE = "│"
@@ -794,6 +798,58 @@ def get_list_by_key_json(file_path, partial_key, return_all=False):
     return results[0] if len(results) == 1 else results
 
 
+def __numpy_encoder(obj):
+    """Convert NumPy objects to JSON-serializable Python objects."""
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.floating):
+        return float(obj)
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+    raise TypeError(
+        f"Object of type '{type(obj).__name__}' is not JSON serializable")
+
+
+def save_json(file_path, data, overwrite=True):
+    """
+    Save metadata to a JSON file.
+
+    Parameters
+    ----------
+    file_path : str or Path
+        Path to the output file.
+    data : dict
+        Metadata to save. NumPy arrays and scalar values are supported.
+    overwrite : bool, optional
+        Overwrite an existing file if True. Default is True.
+
+    Returns
+    -------
+    pathlib.Path
+        Updated file path.
+    """
+    file_path = __get_path(file_path, check_exist=False)
+    file_path = file_path.resolve()
+    if file_path.suffix.lower() != ".json":
+        file_path = file_path.with_suffix(".json")
+    if not overwrite:
+        file_path = make_file_name(file_path)
+    make_folder(file_path)
+    now = datetime.datetime.now()
+    formatted_date = now.strftime("%H:%M:%S; %d %B %Y")
+    metadata = {"Date_recorded": formatted_date, "Metadata": data}
+
+    try:
+        with open(file_path, "w", encoding="utf-8") as file:
+            json.dump(metadata, file, indent=4, default=__numpy_encoder)
+    except (OSError, TypeError, ValueError) as error:
+        raise ValueError(
+            f"Couldn't write to file: {file_path}. Error: {error}")
+    return str(file_path)
+
+
 def load_csv(file_path, dtype=float, delimiter=","):
     """
     Load data from a CSV file into a NumPy array.
@@ -850,7 +906,7 @@ def save_csv(file_path, data):
 
 def save_image_plt(file_path, mat, x_label="X", y_label="Y", x_max=None,
                    y_max=None, aspect="auto", cmap=None, dpi=100, text_size=20,
-                   font_weight="bold", color_bar=True, fig_size=(16, 16),
+                   font_weight="bold", color_bar=True, figsize=(16, 16),
                    layout=(0.0, 0.02, 1.0, 1.0)):
     """
     Save a 2D array as an image using Matplotlib.
@@ -881,7 +937,7 @@ def save_image_plt(file_path, mat, x_label="X", y_label="Y", x_max=None,
         Font weight for labels. E.g., 'normal', 'bold'. Default is 'bold'.
     color_bar : bool, optional
         Whether to display a color bar. Default is True.
-    fig_size : tuple of float, optional
+    figsize : tuple of float, optional
         Figure size in inches as (width, height). Default is (16, 16).
     layout : tuple of float, optional
         The rect parameter for tight layout (left, bottom, right, top).
@@ -899,35 +955,33 @@ def save_image_plt(file_path, mat, x_label="X", y_label="Y", x_max=None,
     if y_max is None:
         y_max = height
     make_folder(file_path)
-    original_rc = plt.rcParams.copy()
-    plt.rcParams["font.size"] = text_size
-    plt.rcParams["font.weight"] = font_weight
-    plt.figure(dpi=dpi, figsize=fig_size)
-    plt.margins(x=0.0, y=0.0)
-    plt.tight_layout(rect=layout)
-    plt.xlabel(x_label, fontsize=text_size, fontweight=font_weight)
-    plt.ylabel(y_label, fontsize=text_size, fontweight=font_weight)
-    imshow_args = {"extent": [0, x_max, y_max, 0], "aspect": aspect}
-    if cmap is not None:
-        imshow_args["cmap"] = cmap
-    plt.imshow(mat, **imshow_args)
-    if color_bar:
-        plt.colorbar(shrink=0.4)
-    try:
-        plt.savefig(file_path, dpi=dpi)
-    except IOError as e:
-        print(f"Couldn't write to file {file_path}")
-        raise e
-    finally:
-        plt.close()
-        plt.rcParams.update(original_rc)
+
+    with matplotlib.rc_context({"font.weight": font_weight,
+                                "font.size": text_size}):
+        fig = Figure(dpi=dpi, figsize=figsize)
+        FigureCanvasAgg(fig)
+        ax = fig.add_subplot(111)
+        ax.margins(x=0.00, y=0.0)
+        ax.set_xlabel(x_label, fontsize=text_size, fontweight='bold')
+        ax.set_ylabel(y_label, fontsize=text_size, fontweight='bold')
+        image = ax.imshow(mat, extent=[0, x_max, 0, y_max], aspect=aspect,
+                          cmap=cmap)
+        if color_bar:
+            fig.colorbar(image, ax=ax, shrink=0.4)
+        fig.tight_layout(rect=layout)
+        try:
+            fig.savefig(file_path, dpi=dpi)
+        except IOError as error:
+            print(f"Couldn't write to file {file_path}")
+            raise error
+
     return str(file_path)
 
 
 def save_plot(file_path, y_list, x_list=None, x_lim=None, y_lim=None,
               x_label="Channel", y_label="Intensity", marker="o", color="red",
               linestyle="--", font_size=12, font_weight="bold",
-              fig_size=(8.0, 7.0), dpi=200, layout=(0.02, 0.0, 1.0, 1.0)):
+              figsize=(8.0, 7.0), dpi=200, layout=(0.02, 0.0, 1.0, 1.0)):
     """
     Save a line plot using Matplotlib.
 
@@ -957,7 +1011,7 @@ def save_plot(file_path, y_list, x_list=None, x_lim=None, y_lim=None,
         Font size for axis labels. Default is 12.
     font_weight : str, optional
         Font weight for axis labels ('bold', 'normal',...). Default is 'bold'.
-    fig_size : tuple of float, optional
+    figsize : tuple of float, optional
         Figure size in inches as (width, height). Default is (8.0, 7.0).
     dpi : int, optional
         Dots per inch for the saved image. Default is 200.
@@ -978,37 +1032,38 @@ def save_plot(file_path, y_list, x_list=None, x_lim=None, y_lim=None,
     """
     file_path = __get_path(file_path, check_exist=False)
     make_folder(file_path)
-    original_rc = plt.rcParams.copy()
-    plt.rcParams["font.size"] = font_size
-    plt.rcParams["font.weight"] = font_weight
-    plt.figure(dpi=dpi, figsize=fig_size)
-    plt.margins(x=0.02, y=0.02)
-    plt.tight_layout(rect=layout)
-    if x_lim is not None:
-        plt.xlim(x_lim)
-    if y_lim is not None:
-        plt.ylim(y_lim)
+
+    fig = Figure(figsize=figsize, dpi=dpi)
+    FigureCanvasAgg(fig)
+    ax = fig.add_subplot(111)
+    ax.margins(x=0.02, y=0.02)
+    plot_args = {"color": color, "marker": marker, "linestyle": linestyle}
     if x_list is None:
-        plt.plot(y_list, color=color, marker=marker, linestyle=linestyle)
+        ax.plot(y_list, **plot_args)
     else:
-        plt.plot(x_list, y_list, color=color, marker=marker,
-                 linestyle=linestyle)
-    plt.xlabel(x_label, fontsize=font_size, fontweight=font_weight)
-    plt.ylabel(y_label, fontsize=font_size, fontweight=font_weight)
+        ax.plot(x_list, y_list, **plot_args)
+    if x_lim is not None:
+        ax.set_xlim(x_lim)
+    if y_lim is not None:
+        ax.set_ylim(y_lim)
+    ax.set_xlabel(x_label, fontsize=font_size, fontweight=font_weight)
+    ax.set_ylabel(y_label, fontsize=font_size, fontweight=font_weight)
+
+    ax.tick_params(axis="both", labelsize=font_size)
+    for tick_label in ax.get_xticklabels() + ax.get_yticklabels():
+        tick_label.set_fontweight(font_weight)
+    fig.tight_layout(rect=layout)
     try:
-        plt.savefig(file_path, dpi=dpi)
-    except IOError as e:
+        fig.savefig(file_path, dpi=dpi)
+    except IOError as error:
         print(f"Couldn't write to file {file_path}")
-        raise e
-    finally:
-        plt.close()
-        plt.rcParams.update(original_rc)
+        raise error
     return str(file_path)
 
 
 def save_q_plot(file_path, q_list, list_data, q_standard=None, start=0,
                 stop=None, x_ticks=None, y_scale="log", y_lim=None,
-                fig_size=(17.0, 9.0), dpi=100, font_size=12,
+                figsize=(17.0, 9.0), dpi=100, font_size=12,
                 font_weight="bold", layout=(0.0, 0.0, 1.01, 0.98),
                 line_style="-", marker=None):
     """
@@ -1034,7 +1089,7 @@ def save_q_plot(file_path, q_list, list_data, q_standard=None, start=0,
         Y-axis scale, 'log' or 'linear'. Default is 'log'.
     y_lim : tuple, optional
         Y-axis limits.
-    fig_size : tuple, optional
+    figsize : tuple, optional
         Figure size in inches. Default is (17, 9).
     dpi : int, optional
         Dots per inch for the output image. Default is 100.
@@ -1059,30 +1114,37 @@ def save_q_plot(file_path, q_list, list_data, q_standard=None, start=0,
         stop = len(list_data)
     q_list = q_list[start:stop]
     list_data = list_data[start:stop]
-    original_rc = plt.rcParams.copy()
-    plt.rcParams["font.size"] = font_size
-    plt.rcParams["font.weight"] = font_weight
-    plt.figure(dpi=dpi, figsize=fig_size)
-    plt.margins(x=0.01, y=0.01)
-    plt.tight_layout(rect=layout)
+    fig = Figure(figsize=figsize, dpi=dpi)
+    FigureCanvasAgg(fig)
+    ax = fig.add_subplot(111)
+    ax.margins(x=0.01, y=0.01)
     if x_ticks is None:
         q_start = np.floor(np.min(q_list))
         q_stop = np.ceil(np.max(q_list))
         q_step = (q_stop - q_start) / 20
-        x_ticks = np.arange(q_start, q_stop, q_step)
-    plt.xticks(x_ticks)
-    plt.yscale(y_scale)
+        if q_step > 0:
+            x_ticks = np.arange(q_start, q_stop, q_step)
+        else:
+            x_ticks = [q_start]
+    ax.set_xticks(x_ticks)
+    ax.set_yscale(y_scale)
     if y_lim is not None:
-        plt.ylim(y_lim)
-    plt.plot(q_list, list_data, linestyle=line_style, marker=marker,
-             color="green", label="Measured")
+        ax.set_ylim(y_lim)
+    ax.plot(q_list, list_data, linestyle=line_style, marker=marker,
+            color="green", label="Measured")
     if q_standard is not None:
         q_max = np.max(list_data)
-        plt.vlines(q_standard, ymin=0, ymax=q_max,
-                   linestyles="solid", color="red", label="Theory")
-    plt.grid(True)
+        ax.vlines(q_standard, ymin=0, ymax=q_max,
+                  linestyles="solid", color="red", label="Theory")
+    ax.tick_params(axis="both", labelsize=font_size)
+    for tick_label in ax.get_xticklabels() + ax.get_yticklabels():
+        tick_label.set_fontweight(font_weight)
+    ax.grid(True)
+    fig.tight_layout(rect=layout)
     make_folder(file_path)
-    plt.savefig(file_path, dpi=dpi)
-    plt.close()
-    plt.rcParams.update(original_rc)
+    try:
+        fig.savefig(file_path, dpi=dpi)
+    except IOError as error:
+        print(f"Couldn't write to file {file_path}")
+        raise error
     return str(file_path)

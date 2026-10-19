@@ -259,7 +259,7 @@ def correct_q_image(image, mat_coef, q_step, ncore=1, prefer="processes"):
         2D array of polynomial calibration coefficients with shape
         (height, n_coef). Each row corresponds to one image row.
     q_step : float
-        q step size per pixel defining the target uniform q grid.
+        q step size per pixel defining the target uniform q-grid.
     ncore : int or None, optional
         Number of CPU cores used for parallel processing. If None, use all
         available cores minus one. If set to 1, computation is serial.

@@ -800,7 +800,7 @@ def locate_peaks_by_ranked_descent(list_data, sigma=0):
 
 
 def get_peaks_by_ranked_descent(list_data, width=15, ratio=0.1, sigma=2,
-                                abs_threshold=None):
+                                abs_threshold=None, return_shoulder=False):
     """
     Locating peaks of 1D signal based on sorting and index-coupling method
     (to be published in Ref [1]).
@@ -821,6 +821,8 @@ def get_peaks_by_ranked_descent(list_data, width=15, ratio=0.1, sigma=2,
         Use it to select peaks with distance (from a peak to its baseline)
         larger than the threshold. This is absolute value (e.g.
         intensity count)
+    return_shoulder : bool, optional
+        Return shoulder peaks (left and right) if True.
 
     Returns:
     -------
@@ -848,6 +850,8 @@ def get_peaks_by_ranked_descent(list_data, width=15, ratio=0.1, sigma=2,
     num_peak = len(m_peaks)
     list_width = r_peaks - l_peaks
     good_peaks = []
+    good_l_peaks = []
+    good_r_peaks = []
     for i in range(num_peak):
         if list_width[i] >= width:
             sub_list = list_data[l_peaks[i]:r_peaks[i] + 1]
@@ -864,7 +868,135 @@ def get_peaks_by_ranked_descent(list_data, width=15, ratio=0.1, sigma=2,
                 if val >= ratio:
                     if abs_threshold is None:
                         good_peaks.append(m_peaks[i])
+                        good_l_peaks.append(l_peaks[i])
+                        good_r_peaks.append(r_peaks[i])
                     else:
                         if distance >= abs_threshold:
                             good_peaks.append(m_peaks[i])
-    return np.sort(np.array(good_peaks))
+                            good_l_peaks.append(l_peaks[i])
+                            good_r_peaks.append(r_peaks[i])
+    good_peaks = np.asarray(good_peaks, dtype=int)
+    sort_idx = np.argsort(good_peaks)
+    good_peaks = good_peaks[sort_idx]
+
+    if return_shoulder:
+        good_l_peaks = np.asarray(good_l_peaks, dtype=int)[sort_idx]
+        good_r_peaks = np.asarray(good_r_peaks, dtype=int)[sort_idx]
+        return good_peaks, good_l_peaks, good_r_peaks
+
+    return good_peaks
+
+
+def remove_background_ranked_descent(list_data, width=15, ratio=0.1, sigma=2):
+    """
+    Remove the background of a 1D signal using the ranked-descent
+    peak-detection method (Ref. [1]).
+
+    Parameters
+    ----------
+    list_data : ndarray
+        1D input signal.
+    width : int, optional
+        Minimum width of a peak. Default is 15.
+    ratio : float, optional
+        Minimum ratio between the peak height above its fitted baseline
+        and the mean signal value around the peak. Default is 0.1.
+    sigma : float, optional
+        Standard deviation for Gaussian smoothing used during peak
+        detection. Default is 2.
+
+    Returns
+    -------
+    ndarray
+        Background-removed signal.
+
+    References
+    ----------
+    [1] Algorithms and software tools for energy-dispersive X-ray
+        diffraction tomography, Nghia T. Vo et al.
+    """
+    bgr = np.copy(list_data)
+    _, l_peaks, r_peaks = get_peaks_by_ranked_descent(bgr, width=width,
+                                                      ratio=ratio, sigma=sigma,
+                                                      return_shoulder=True)
+    for i, l_pos in enumerate(l_peaks):
+        x_points = np.arange(l_pos, r_peaks[i])
+        y_points = np.interp(x_points, np.asarray([l_pos, r_peaks[i]]),
+                             np.asarray(
+                                 [list_data[l_pos], list_data[r_peaks[i]]]))
+        bgr[l_pos:r_peaks[i]] = np.minimum(y_points,
+                                           list_data[l_pos:r_peaks[i]])
+    return list_data - bgr
+
+
+def remove_image_background_ranked_descent(image, axis=0, width=15,
+                                           ratio=0.1, sigma=2, ncore=None,
+                                           prefer="threads"):
+    """
+    Apply the ranked-descent background removal method (Ref. [1])
+    along an axis of a 2D image.
+
+    Parameters
+    ----------
+    image : ndarray
+        2D input array.
+    axis : int, optional
+        Axis along which the method is applied. Default is 0.
+        If axis=0, processing is performed along columns.
+        If axis=1, processing is performed along rows.
+    width : int, optional
+        Minimum width of a peak. Default is 15.
+    ratio : float, optional
+        Minimum ratio between the peak height above its fitted baseline
+        and the mean signal value around the peak. Default is 0.1.
+    sigma : float, optional
+        Standard deviation for Gaussian smoothing used during peak
+        detection. Default is 2.
+    ncore : int, optional
+        Number of cpu-cores used for computing. Automatically selected if None.
+    prefer : {"threads", "processes"}, optional
+        Preferred parallel backend ("threads" for I/O bound tasks or
+        "processes" for CPU-bound tasks).
+
+    Returns
+    -------
+    ndarray
+        Background-removed image.
+
+    References
+    ----------
+    [1] Algorithms and software tools for energy-dispersive X-ray
+        diffraction tomography, Nghia T. Vo et al.
+    """
+    max_cores = mp.cpu_count()
+    if ncore is None:
+        ncore = max(1, max_cores - 1)
+    else:
+        ncore = max(1, min(ncore, max_cores))
+    if axis not in (0, 1):
+        raise ValueError("Only 2 options: 0 or 1")
+    if prefer not in ("threads", "processes"):
+        raise ValueError("Prefer must be 'threads' or 'processes'")
+    image = np.asarray(image)
+    if image.ndim != 2:
+        raise ValueError("Input image must be a 2D array")
+    if axis == 1:
+        image = np.transpose(image)
+
+    height = image.shape[0]
+    if ncore > 1:
+        img_corr = Parallel(n_jobs=ncore, prefer=prefer)(delayed(
+            remove_background_ranked_descent)(
+            image[idx], width=width, ratio=ratio,
+            sigma=sigma) for idx in range(height))
+        img_corr = np.asarray(img_corr)
+    else:
+        img_corr = np.zeros_like(image)
+        for i in range(height):
+            img_corr[i] = remove_background_ranked_descent(image[i],
+                                                           width=width,
+                                                           ratio=ratio,
+                                                           sigma=sigma)
+    if axis == 1:
+        img_corr = np.transpose(img_corr)
+    return img_corr

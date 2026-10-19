@@ -436,23 +436,23 @@ class LoaderSaverMethods(unittest.TestCase):
     def test_save_image_plt(self):
         mat = np.random.rand(32, 64)
         file_path = f"{self.tmp_dir}/plt/image.png"
-        path = losa.save_image_plt(file_path, mat, dpi=50, fig_size=(4, 4))
+        path = losa.save_image_plt(file_path, mat, dpi=50, figsize=(4, 4))
         self.assertTrue(isinstance(path, str) and os.path.isfile(path))
 
         path = losa.save_image_plt(f"{self.tmp_dir}/plt/image2.png", mat,
                                    x_max=10.0, y_max=5.0, cmap="gray",
-                                   color_bar=False, dpi=50, fig_size=(4, 4))
+                                   color_bar=False, dpi=50, figsize=(4, 4))
         self.assertTrue(os.path.isfile(path))
 
     def test_save_plot(self):
         y_list = np.random.rand(50)
         file_path = f"{self.tmp_dir}/plt/plot.png"
-        path = losa.save_plot(file_path, y_list, dpi=50, fig_size=(4, 4))
+        path = losa.save_plot(file_path, y_list, dpi=50, figsize=(4, 4))
         self.assertTrue(isinstance(path, str) and os.path.isfile(path))
 
         path = losa.save_plot(f"{self.tmp_dir}/plt/plot2.png", y_list,
                               x_list=np.arange(50), x_lim=(0, 40),
-                              y_lim=(0, 1), dpi=50, fig_size=(4, 4))
+                              y_lim=(0, 1), dpi=50, figsize=(4, 4))
         self.assertTrue(os.path.isfile(path))
 
     def test_save_q_plot(self):
@@ -460,12 +460,12 @@ class LoaderSaverMethods(unittest.TestCase):
         list_data = 1.0 + np.random.rand(100)
         file_path = f"{self.tmp_dir}/plt/q_plot.png"
         path = losa.save_q_plot(file_path, q_list, list_data, dpi=50,
-                                fig_size=(6, 4))
+                                figsize=(6, 4))
         self.assertTrue(isinstance(path, str) and os.path.isfile(path))
 
         path = losa.save_q_plot(f"{self.tmp_dir}/plt/q_plot2.png", q_list,
                                 list_data, q_standard=[1.5, 2.5, 3.5],
                                 start=10, stop=90, x_ticks=[1, 2, 3, 4],
                                 y_scale="linear", y_lim=(0, 3), dpi=50,
-                                fig_size=(6, 4))
+                                figsize=(6, 4))
         self.assertTrue(os.path.isfile(path))
