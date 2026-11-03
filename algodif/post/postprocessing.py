@@ -29,9 +29,9 @@ from pixel/index space to physical axes such as energy or scattering vector
 (q) using polynomial calibration models.
 
 Core functionalities include:
-- Correcting energy for 1D spectra and 2D images
-- Correcting q-axis for 1D pattern and 2D images
-- Generating q-map from per-row calibration coefficients
+- Correcting the energy axis of 1D spectra and 2D images.
+- Correcting the q-axis of 1D patterns and 2D images.
+- Generating energy-maps and q-maps from per-row calibration coefficients.
 """
 
 
@@ -43,9 +43,9 @@ def correct_energy_1d(list_data, list_coef, energy_step):
     """
     Apply an energy-axis correction to a 1D spectrum.
 
-    The function uses a polynomial calibration model to map measured energy
-    coordinates to corrected energy coordinates, followed by interpolation
-    of the input data onto a uniform energy grid.
+    The function uses a polynomial calibration model to map pixel indices
+    to measured energies and interpolates the data onto a uniform energy
+    grid.
 
     Parameters
     ----------
@@ -55,7 +55,7 @@ def correct_energy_1d(list_data, list_coef, energy_step):
         Polynomial calibration coefficients mapping pixel index to measured
         energy. Coefficients must be ordered with the constant term first.
     energy_step : float
-        Energy step size per pixel.
+        Energy step size per pixel defining the target uniform energy grid.
 
     Returns
     -------
@@ -105,9 +105,9 @@ def correct_energy_image(image, mat_coef, energy_step, ncore=None,
     """
     (height, width) = image.shape
     if len(mat_coef) != height:
-        raise ValueError(f"Row number of the calibration coefficients: "
-                         f" {len(mat_coef)} is not the same as the height "
-                         f"value {height}")
+        raise ValueError(f"Number of rows of the calibration coefficients, "
+                         f"{len(mat_coef)}, is not the same as the height, "
+                         f"{height}")
     x_list = np.arange(width)
     list_energy = x_list * energy_step
     max_cores = cpu_count()
@@ -123,7 +123,7 @@ def correct_energy_image(image, mat_coef, energy_step, ncore=None,
         return np.interp(list_energy_, list_em, list_data, left=0, right=0)
 
     if ncore == 1:
-        mat_correct = np.zeros_like(image)
+        mat_correct = np.zeros_like(image, dtype=float)
         for ii in range(height):
             mat_correct[ii] = __correct_e_core(image[ii], mat_coef[ii],
                                                x_list, list_energy)
@@ -139,8 +139,9 @@ def get_energy_map(height, width, mat_coef):
     """
     Generate a 2D energy-map from per-row polynomial calibration coefficients.
 
-    The E-map provides the E-value corresponding to each pixel position
-    in a detector image, based on row-dependent calibration coefficients.
+    The energy-map provides the energy value corresponding to each pixel
+    position in a detector image, based on row-dependent calibration
+    coefficients.
 
     Parameters
     ----------
@@ -155,13 +156,13 @@ def get_energy_map(height, width, mat_coef):
     Returns
     -------
     ndarray
-        2D array of shape (height, width) containing q-values for each
+        2D array of shape (height, width) containing energy values for each
         pixel position.
     """
     if len(mat_coef) != height:
-        raise ValueError(f"Row number of the calibration coefficients: "
-                         f" {len(mat_coef)} is not the same as the height "
-                         f"value {height}")
+        raise ValueError(f"Number of rows of the calibration coefficients, "
+                         f"{len(mat_coef)}, is not the same as the height, "
+                         f"{height}")
     e_map = np.zeros((height, width))
     x_list = np.arange(width)
     for ii in range(height):
@@ -174,25 +175,25 @@ def get_energy_map(height, width, mat_coef):
 
 def correct_q_1d(list_data, list_coef, q_step):
     """
-    Apply a scattering vector (q) correction to a 1D spectrum.
+    Apply a scattering vector (q) correction to a 1D pattern.
 
     The function uses a polynomial calibration model to map pixel indices
-    to measured q-values and interpolates the data onto a uniform q grid.
+    to measured q-values and interpolates the data onto a uniform q-grid.
 
     Parameters
     ----------
     list_data : array_like
-        1D input spectrum (intensity values).
+        1D input pattern (intensity values).
     list_coef : array_like
         Polynomial calibration coefficients mapping pixel index to measured
         q-values. Coefficients must be ordered with the constant term first.
     q_step : float
-        q step size per pixel defining the target uniform q grid.
+        q step size per pixel defining the target uniform q-grid.
 
     Returns
     -------
     ndarray
-        q-corrected 1D spectrum. Values outside the calibrated range are set
+        q-corrected 1D pattern. Values outside the calibrated range are set
         to zero.
     """
     width = len(list_data)
@@ -236,9 +237,9 @@ def correct_q_image(image, mat_coef, q_step, ncore=1, prefer="processes"):
     """
     (height, width) = image.shape
     if len(mat_coef) != height:
-        raise ValueError(f"Row number of the calibration coefficients: "
-                         f" {len(mat_coef)} is not the same as the height "
-                         f"value {height}")
+        raise ValueError(f"Number of rows of the calibration coefficients, "
+                         f"{len(mat_coef)}, is not the same as the height, "
+                         f"{height}")
     x_list = np.arange(width)
     q_list = np.arange(width) * q_step
     max_cores = cpu_count()
@@ -254,7 +255,7 @@ def correct_q_image(image, mat_coef, q_step, ncore=1, prefer="processes"):
         return np.interp(q_list_, list_qm, list_data, left=0, right=0)
 
     if ncore == 1:
-        mat_correct = np.zeros_like(image)
+        mat_correct = np.zeros_like(image, dtype=float)
         for ii in range(height):
             mat_correct[ii] = __correct_q_core(image[ii], mat_coef[ii],
                                                x_list, q_list)
@@ -290,9 +291,9 @@ def get_q_map(height, width, mat_coef):
         pixel position.
     """
     if len(mat_coef) != height:
-        raise ValueError(f"Row number of the calibration coefficients: "
-                         f" {len(mat_coef)} is not the same as the height "
-                         f"value {height}")
+        raise ValueError(f"Number of rows of the calibration coefficients, "
+                         f"{len(mat_coef)}, is not the same as the height, "
+                         f"{height}")
     q_map = np.zeros((height, width))
     x_list = np.arange(width)
     for ii in range(height):

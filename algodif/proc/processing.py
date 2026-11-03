@@ -30,9 +30,9 @@ matching them to known reference values, and fitting polynomial mappings
 from pixel/index space to physical units.
 
 Core functions include:
-- Generate gaussian peak signal from discrete values.
-- Peak matching via polynomial optimization between generated gaussian
-  spectrum or pattern.
+- Generate a Gaussian-peak signal from discrete values.
+- Peak matching via polynomial optimization between generated Gaussian
+  spectra or patterns.
 - Energy-axis calibration for spectra and images.
 - q-axis calibration for diffraction data using the GeRM detector geometry.
 - q-axis calibration for generic diffraction data.
@@ -52,7 +52,7 @@ def __cost_function(poly_coefs, y1, x2, y2, metric="mean"):
     """
     Compute a cost value between a reference signal and a generated signal.
 
-    The transformation are defined by a polynomial warp applied to `x2`,
+    The transformation is defined by a polynomial warp applied to `x2`,
     followed by interpolation of `y2` onto the transformed coordinates.
 
     Parameters
@@ -78,10 +78,10 @@ def __cost_function(poly_coefs, y1, x2, y2, metric="mean"):
     x2_ss = np.polyval(poly_coefs, x2)
     y2_ss = np.interp(x2_ss, x2, y2)
     if metric != "mean":
-        metric = 1 - stats.pearsonr(y2_ss, y1)[0]
+        cost = 1 - stats.pearsonr(y2_ss, y1)[0]
     else:
-        metric = np.mean(np.clip((y1 - y2_ss), 0, None))
-    return metric
+        cost = np.mean(np.clip((y1 - y2_ss), 0, None))
+    return cost
 
 
 def find_polynomial_warp(y1, y2, initial_guess=(1.0, 0.0),
@@ -101,7 +101,7 @@ def find_polynomial_warp(y1, y2, initial_guess=(1.0, 0.0),
     y2 : array_like
         Signal to be scaled and shifted.
     initial_guess : array_like, optional
-        Initial guess polynomial coefficients, high-to-low order.
+        Initial guess of polynomial coefficients, high-to-low order.
     bounds : sequence of tuple or None, optional
         Bounds for the optimization parameters. If None, no bounds are applied.
     metric : {"mean", "pearson"}, optional
@@ -195,8 +195,8 @@ def make_gaussian_peak_signal(discrete_vals, min_val, max_val, step_val,
         x_diff = np.abs(x - x_list)
         min_xdiff = np.min(x_diff)
         if min_xdiff > step_val:
-            warnings.warn(f"Step size need to be at least of: {min_xdiff}"
-                          f"for a smoothing mapping discrete values")
+            warnings.warn(f"Step size needs to be at least {min_xdiff} "
+                          f"for a smooth mapping of discrete values")
         pos_min = np.argmin(x_diff)
         if pos_min not in list_idx:
             y_list1[pos_min] = 1
@@ -214,7 +214,8 @@ def estimate_scale_shift(reference_signal, measured_signal, shift_start,
                          shift_stop, shift_step=1, ratio_start=-0.15,
                          ratio_stop=0.15, ratio_step=0.005, metric="pearson"):
     """
-    Perform a coarse search to align measured signal to reference signal.
+    Perform a coarse search to align the measured signal to the reference
+    signal.
     The alignment is achieved by scanning over scale and shift values and
     selecting the combination that minimizes the cost function.
 
@@ -257,12 +258,12 @@ def estimate_scale_shift(reference_signal, measured_signal, shift_start,
             corrected_signal = apply_polynomial_warp(measured_signal,
                                                      [scale, shift])
             if metric != "mean":
-                metric = 1 - stats.pearsonr(reference_signal,
-                                            corrected_signal)[0]
+                cost = 1 - stats.pearsonr(reference_signal,
+                                          corrected_signal)[0]
             else:
-                metric = np.mean(
+                cost = np.mean(
                     np.clip((reference_signal - corrected_signal), 0, None))
-            mat_metric[i, j] = metric
+            mat_metric[i, j] = cost
     (i_pos, j_pos) = np.unravel_index(np.argmin(mat_metric, axis=None),
                                       mat_metric.shape)
     return list_scale[i_pos], list_shift[j_pos]
@@ -284,11 +285,12 @@ def match_peaks(measured_peaks, reference_values, step_size, order=2,
     reference_values : array_like
         Reference values such as q-values or energies.
     step_size : float
-        Conversion factor from pixel to physical units (q or Energy).
+        Conversion factor from pixel to physical units (q or energy).
     order : int, optional
         Polynomial order used for the transformation.
-    search_range : int or tuple, optional
-        Shift search range (in physical units or as a tuple of bounds).
+    search_range : float or tuple, optional
+        Shift search range in physical units: a symmetric half-range or a
+        (start, stop) tuple.
     tol : float, optional
         Tolerance threshold for accepting a peak match, in the range of [0, 1].
     size : int, optional
@@ -330,12 +332,6 @@ def match_peaks(measured_peaks, reference_values, step_size, order=2,
         measured_values, min_val, max_val, step_size, size=size)
     ref_peak_signal, ref_idx, ref_order = make_gaussian_peak_signal(
         reference_values, min_val, max_val, step_size, size=size)
-
-    # import matplotlib.pyplot as plt
-    # plt.plot(meas_peak_signal, color="red")
-    # plt.plot(ref_peak_signal, color="blue")
-    # plt.show()
-
     if initial_guess is None:
         scale_val, shift_val = estimate_scale_shift(
             ref_peak_signal, meas_peak_signal, start, stop,
@@ -349,14 +345,8 @@ def match_peaks(measured_peaks, reference_values, step_size, order=2,
                                       bounds=bounds)
     meas_peak_signal_corr = apply_polynomial_warp(meas_peak_signal,
                                                   poly_coefs)
-
-    # import matplotlib.pyplot as plt
-    # plt.plot(meas_peak_signal_corr, color="red")
-    # plt.plot(ref_peak_signal, color="blue")
-    # plt.show()
-
     degree = len(poly_coefs) - 1
-    list_peaks_ref = np.int16(np.sum(np.asarray(
+    list_peaks_ref = np.int32(np.sum(np.asarray(
         [factor * ref_idx ** (degree - i) for i, factor in
          enumerate(poly_coefs)]), axis=0))
     selected_peaks = []
@@ -367,7 +357,7 @@ def match_peaks(measured_peaks, reference_values, step_size, order=2,
         pos = ref_idx[i]
         start_idx = pos - rad
         stop_idx = pos + rad + 1
-        if 0 <= start_idx < num_idx and 0 <= stop_idx < num_idx:
+        if 0 <= start_idx <= num_idx and 0 <= stop_idx <= num_idx:
             list1 = meas_peak_signal_corr[start_idx:stop_idx]
             list2 = ref_peak_signal[start_idx:stop_idx]
             val = np.mean(np.abs(list1 - list2))
@@ -413,7 +403,7 @@ def calibrate_energy_1d(list_data, reference_energies, energy_step,
     list_data : array_like
         1D input signal (e.g. spectrum intensity).
     reference_energies : array_like
-        Reference energy values used for calibration (E.g keV).
+        Reference energy values used for calibration (e.g. keV).
     energy_step : float
         Energy step per pixel used for peak matching.
     fit_order : int, optional
@@ -443,8 +433,8 @@ def calibrate_energy_1d(list_data, reference_energies, energy_step,
     Returns
     -------
     poly_coefs : ndarray
-        Polynomial coefficients (constant term first, i.e a0+a1*x+a2*x^2 ..)
-        for the energy calibration.
+        Polynomial coefficients (constant term first, i.e.
+        a0 + a1*x + a2*x^2 + ...) for the energy calibration.
     loc_peaks : ndarray, optional
         Matched peak positions in pixel units. Returned if `return_check`
         is True.
@@ -454,6 +444,7 @@ def calibrate_energy_1d(list_data, reference_energies, energy_step,
     list_data = np.copy(list_data)
     if list_data.ndim != 1:
         raise ValueError("Input must be a 1D array!!!")
+    reference_energies = np.asarray(reference_energies)
     npoint = len(list_data)
     min_len = fit_order + 1
     zero_left = np.clip(zero_left, 0, npoint - min_len)
@@ -580,9 +571,10 @@ def calibrate_energy_image(image, reference_energies, energy_step,
     results : ndarray
         Array of polynomial coefficients for each image row. Coefficients
         are ordered with the constant term first.
-    loc_peaks : ndarray, optional
-        Return matched peak positions for each row if `return_check` is True.
-    loc_energies : ndarray, optional
+    loc_peaks : list of ndarray, optional
+        Matched peak positions for each row. Returned if `return_check` is
+        True.
+    loc_energies : list of ndarray, optional
         Corresponding reference energies for each row. Returned if
         `return_check` is True.
     """
@@ -639,22 +631,22 @@ def calibrate_q_germ_detector_1d(strip_idx, list_data, d_spacing_values,
                                                    "initial_guess": None},
                                  peaks=None, return_check=False):
     """
-    Calibrate the scattering vector (q) axis for a 1D GERM detector pattern.
+    Calibrate the scattering vector (q) axis for a 1D GeRM detector pattern.
 
-    The function detects peak positions in a single GERM detector strip,
+    The function detects peak positions in a single GeRM detector strip,
     matches them to reference d-spacings, and fits a polynomial mapping from
     pixel/index space to q-space.
 
     Parameters
     ----------
     strip_idx : int
-        Index of the GERM detector strip.
+        Index of the GeRM detector strip.
     list_data : array_like
         1D intensity profile measured by the detector strip.
     d_spacing_values : array_like
         Reference d-spacing values used for calibration.
     two_theta : float
-        Scattering angle (2θ, in degree) of the detector.
+        Scattering angle (2θ, in degrees) of the detector.
     energy_step : float
         Energy step per pixel used for peak matching.
     energy_guess : array_like or None, optional
@@ -698,6 +690,7 @@ def calibrate_q_germ_detector_1d(strip_idx, list_data, d_spacing_values,
     list_data = np.copy(list_data)
     if list_data.ndim != 1:
         raise ValueError("Input must be a 1D array!!!")
+    d_spacing_values = np.asarray(d_spacing_values)
     q_values = 2 * np.pi / d_spacing_values
     npoint = len(list_data)
     min_len = fit_order + 1
@@ -720,7 +713,7 @@ def calibrate_q_germ_detector_1d(strip_idx, list_data, d_spacing_values,
     else:
         if len(energy_guess) != len(d_spacing_values):
             raise ValueError("Number of d-spacing values is not the same as "
-                             "the number of energy guess")
+                             "the number of energy guesses")
     loc_peaks, loc_q_values = [], []
     if peaks is None:
         if sigma > 0:
@@ -788,10 +781,10 @@ def calibrate_q_germ_detector_image(image, d_spacing_values, two_theta,
                                     peaks=None, return_check=False, ncore=None,
                                     prefer="processes"):
     """
-    Calibrate the scattering vector (q) axis for a 2D GERM detector image.
+    Calibrate the scattering vector (q) axis for a 2D GeRM detector image.
 
     This function applies 1D q-axis calibration independently to each row
-    (strip) of a GERM detector image. For each detector strip, peak positions
+    (strip) of a GeRM detector image. For each detector strip, peak positions
     are detected or provided, matched to reference d-spacings, and used to
     fit a polynomial mapping from pixel/index space to q-space.
 
@@ -799,11 +792,11 @@ def calibrate_q_germ_detector_image(image, d_spacing_values, two_theta,
     ----------
     image : array_like
         2D detector image with shape (n_strips, n_pixels), where each row
-        corresponds to a GERM detector strip.
+        corresponds to a GeRM detector strip.
     d_spacing_values : array_like
         Reference d-spacing values used for calibration.
     two_theta : float
-        Scattering angle (2θ, in degree) of the detector.
+        Scattering angle (2θ, in degrees) of the detector.
     energy_step : float
         Energy step per pixel used for peak matching.
     strip_start : int, optional
@@ -852,14 +845,14 @@ def calibrate_q_germ_detector_image(image, d_spacing_values, two_theta,
         Array of polynomial coefficients for each detector strip, with shape
         (n_strips, fit_order + 1). Coefficients are ordered with the constant
         term first.
-    loc_peaks : ndarray, optional
+    loc_peaks : list of ndarray, optional
         Matched peak positions (pixel units) for each strip. Returned if
         `return_check` is True.
-    loc_q_values : ndarray, optional
+    loc_q_values : list of ndarray, optional
         Corresponding reference q-values for each strip. Returned if
         `return_check` is True.
     """
-    (height, width) = image.shape
+    height = image.shape[0]
     if peaks is not None:
         if len(peaks) != height:
             raise ValueError(f"Length of list of list of peaks, {len(peaks)}, "
@@ -881,7 +874,7 @@ def calibrate_q_germ_detector_image(image, d_spacing_values, two_theta,
                 peaks, return_check) for idx in strip_ids)
     else:
         results = []
-        for idx in range(height):
+        for idx in strip_ids:
             res = calibrate_q_germ_detector_1d(idx, image[idx - strip_start],
                                                d_spacing_values, two_theta,
                                                energy_step, energy_guess,
@@ -963,6 +956,9 @@ def calibrate_q_1d(list_data, q_reference, q_step, fit_order=2, zero_left=0,
         Corresponding reference q-values. Returned if `return_check` is True.
     """
     list_data = np.copy(list_data)
+    if list_data.ndim != 1:
+            raise ValueError("Input must be a 1D array!!!")
+    q_reference = np.asarray(q_reference)
     npoint = len(list_data)
     min_len = fit_order + 1
     zero_left = np.clip(zero_left, 0, npoint - min_len)
@@ -1098,15 +1094,15 @@ def calibrate_q_image(image, q_reference, q_step, fit_order=2, zero_left=0,
         Array of polynomial coefficients for each image row, with shape
         (n_rows, fit_order + 1). Coefficients are ordered with the constant
         term first.
-    loc_peaks : ndarray, optional
+    loc_peaks : list of ndarray, optional
         Matched peak positions (pixel units) for each row. Returned if
         `return_check` is True.
-    loc_q_values : ndarray, optional
+    loc_q_values : list of ndarray, optional
         Corresponding reference q-values for each row. Returned if
         `return_check` is True.
     """
     (height, width) = image.shape
-    if not isinstance(q_step, float):
+    if not np.isscalar(q_step):
         if len(q_step) != height:
             raise ValueError(f"Length of list of q-step, {len(q_step)}, "
                              f"is not the same as the height, {height}, "

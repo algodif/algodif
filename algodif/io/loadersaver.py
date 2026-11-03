@@ -122,11 +122,11 @@ def get_hdf_information(file_path, display=False):
 
     Returns
     -------
-    list_key : str
+    list_key : list of str
         Keys to the datasets.
-    list_shape : tuple of int
+    list_shape : list of tuple of int
         Shapes of the datasets.
-    list_type : str
+    list_type : list of dtype
         Types of the datasets.
     """
     hdf_object = h5py.File(__get_path(file_path), 'r')
@@ -147,11 +147,10 @@ def get_hdf_information(file_path, display=False):
                 list_key.append(data.name)
         except KeyError:
             list_key.append(key)
-            pass
-    for i, key in enumerate(list_key):
+    for key in list_key:
         shape, dtype = None, None
         try:
-            data = hdf_object[list_key[i]]
+            data = hdf_object[key]
             if isinstance(data, h5py.Dataset):
                 shape, dtype = data.shape, data.dtype
             list_shape.append(shape)
@@ -159,7 +158,6 @@ def get_hdf_information(file_path, display=False):
         except KeyError:
             list_shape.append(shape)
             list_type.append(dtype)
-            pass
     hdf_object.close()
     if display:
         if list_key:
@@ -186,11 +184,11 @@ def find_hdf_key(file_path, pattern, display=False):
 
     Returns
     -------
-    list_key : str
+    list_key : list of str
         Keys to the datasets.
-    list_shape : tuple of int
+    list_shape : list of tuple of int
         Shapes of the datasets.
-    list_type : str
+    list_type : list of dtype
         Types of the datasets.
     """
     hdf_object = h5py.File(__get_path(file_path), 'r')
@@ -211,7 +209,7 @@ def find_hdf_key(file_path, pattern, display=False):
         except KeyError:
             pass
     list_dkey, list_dshape, list_dtype = [], [], []
-    for _, key in enumerate(list_key):
+    for key in list_key:
         if pattern in key:
             list_dkey.append(key)
             shape, dtype = None, None
@@ -224,7 +222,6 @@ def find_hdf_key(file_path, pattern, display=False):
             except KeyError:
                 list_dtype.append(dtype)
                 list_dshape.append(shape)
-                pass
     hdf_object.close()
     if display:
         if list_dkey:
@@ -279,7 +276,7 @@ def _add_branches(tree, hdf_object, key, key1, index, last_index, prefix,
                 if isinstance(obj, h5py.Dataset):
                     shape = str(obj.shape)
             except KeyError:
-                shape = str("-> ???External-link???")
+                shape = "-> ???External-link???"
     if shape is not None:
         tree.append(f"{prefix}{connector} {key1} {shape}")
     else:
@@ -337,15 +334,15 @@ def get_hdf_tree(file_path, output=None, add_shape=True, display=True):
 
     Returns
     -------
-    list of string
+    collections.deque of str
+        Lines of the tree.
     """
-    hdf_object = h5py.File(__get_path(file_path), 'r')
-    tree = deque()
-    _make_tree_body(tree, hdf_object, add_shape=add_shape)
+    with h5py.File(__get_path(file_path), 'r') as hdf_object:
+        tree = deque()
+        _make_tree_body(tree, hdf_object, add_shape=add_shape)
     if output is not None:
         make_folder(output)
-        output_file = open(output, mode="w", encoding="UTF-8")
-        with output_file as stream:
+        with open(output, mode="w", encoding="UTF-8") as stream:
             for entry in tree:
                 print(entry, file=stream)
     else:
@@ -366,6 +363,7 @@ def load_hdf(file_path, key_path, return_file_obj=False):
     key_path : str
         Key path to the dataset.
     return_file_obj : bool, optional
+        Also return the file object (to close it later) if True.
 
     Returns
     -------
@@ -376,8 +374,8 @@ def load_hdf(file_path, key_path, return_file_obj=False):
         hdf_object = h5py.File(__get_path(file_path), 'r')
     except Exception as error:
         raise ValueError(f"{error}")
-    check = key_path in hdf_object
-    if not check:
+    if key_path not in hdf_object:
+        hdf_object.close()
         raise ValueError(
             "Couldn't open object with the given key: {}".format(key_path))
     if return_file_obj:
@@ -420,7 +418,8 @@ def make_folder_name(folder_path, name_prefix="Output", zero_prefix=5):
     name_prefix : str
         Name prefix
     zero_prefix : int
-        Number of zeros to be added to file names.
+        Number of digits of the zero-padded index.
+
     Returns
     -------
     str
@@ -474,25 +473,25 @@ def make_file_name(file_path):
 
 def find_file(path, case_sensitive=False):
     """
-    Search file
+    Search for files matching a pattern.
 
     Parameters
     ----------
     path : str
-        Path and pattern to find files. e.g. 'C:/data/*.tif*'
+        Path and pattern to find files. E.g. 'C:/data/*.tif*'
     case_sensitive : bool, optional
         If True, pattern matching is case-sensitive. Defaults to False.
 
     Returns
     -------
-    str or list of str
-        List of files.
+    list of str
+        Sorted list of files.
     """
     path = __correct_path(path)
     directory = path.parent
     pattern = path.name
     if case_sensitive:
-        file_paths = list(directory.glob(path.name))
+        file_paths = list(directory.glob(pattern))
     else:
         pattern_lower = pattern.casefold()
         file_paths = [p for p in directory.iterdir()
@@ -510,7 +509,7 @@ def save_image(file_path, mat, overwrite=True):
     ----------
     file_path : str
         Path to the file.
-    mat : int or float
+    mat : array_like
         2D array.
     overwrite : bool
         Overwrite an existing file if True.
@@ -538,13 +537,14 @@ def save_image(file_path, mat, overwrite=True):
         image.save(file_path)
     except Exception as error:
         raise ValueError(f"Couldn't write to file: {file_path}. Error {error}")
-    return file_path
+    return str(file_path)
 
 
 def open_hdf_stream(file_path, data_shape, key_path='entry/data',
                     data_type='float32', overwrite=True, **options):
     """
-    Write an array to a hdf/nxs file with options to add metadata.
+    Open a stream to write an array to a hdf/nxs file with options to add
+    metadata.
 
     Parameters
     ----------
@@ -554,7 +554,7 @@ def open_hdf_stream(file_path, data_shape, key_path='entry/data',
         Shape of the data.
     key_path : str
         Key path to the dataset.
-    data_type: str
+    data_type : str
         Type of data.
     overwrite : bool
         Overwrite the existing file if True.
@@ -564,7 +564,7 @@ def open_hdf_stream(file_path, data_shape, key_path='entry/data',
     Returns
     -------
     object
-        hdf object.
+        hdf-dataset object.
     """
     file_path = __get_path(file_path, check_exist=False)
     file_path = file_path.resolve()
@@ -726,11 +726,12 @@ def find_key_of_list_json(file_path_or_dict):
     elif isinstance(file_path_or_dict, dict):
         data = file_path_or_dict
     else:
-        raise TypeError("file_path must be a JSON file path or dictionary.")
+        raise TypeError(
+            "file_path_or_dict must be a JSON file path or dictionary.")
     result = []
 
     def is_list_of_numbers(value):
-        return isinstance(value, list) and all(
+        return isinstance(value, list) and len(value) > 0 and all(
             isinstance(item, (int, float)) for item in value)
 
     def __search(d):
@@ -752,7 +753,7 @@ def get_list_by_key_json(file_path, partial_key, return_all=False):
     Parameters
     ----------
     file_path : str, pathlib.Path or dict
-        JSON file path, Path object, or dictionary
+        JSON file path, Path object, or dictionary.
     partial_key : str
         Case-sensitive substring to match against keys.
     return_all : bool, optional
@@ -762,8 +763,8 @@ def get_list_by_key_json(file_path, partial_key, return_all=False):
     -------
     list or None
         First matching list, or None if no match is found.
-        If return_all is True, return a list of matching lists, or an empty
-        list.
+        If return_all is True, return a list of matching lists (or the list
+        itself if there is only one match), or an empty list.
     """
     if not isinstance(partial_key, str):
         raise TypeError("partial_key must be a string.")
@@ -826,7 +827,7 @@ def save_json(file_path, data, overwrite=True):
 
     Returns
     -------
-    pathlib.Path
+    str
         Updated file path.
     """
     file_path = __get_path(file_path, check_exist=False)
@@ -960,8 +961,8 @@ def save_image_plt(file_path, mat, x_label="X", y_label="Y", x_max=None,
         FigureCanvasAgg(fig)
         ax = fig.add_subplot(111)
         ax.margins(x=0.00, y=0.0)
-        ax.set_xlabel(x_label, fontsize=text_size, fontweight='bold')
-        ax.set_ylabel(y_label, fontsize=text_size, fontweight='bold')
+        ax.set_xlabel(x_label, fontsize=text_size, fontweight=font_weight)
+        ax.set_ylabel(y_label, fontsize=text_size, fontweight=font_weight)
         image = ax.imshow(mat, extent=[0, x_max, 0, y_max], aspect=aspect,
                           cmap=cmap)
         if color_bar:
@@ -986,7 +987,7 @@ def save_plot(file_path, y_list, x_list=None, x_lim=None, y_lim=None,
     Parameters
     ----------
     file_path : str or Path
-        Output path for saving the image. Must use Unix-style ('/') separators.
+        Output path for saving the image.
     y_list : array-like
         Y-axis data to plot.
     x_list : array-like, optional
@@ -1001,10 +1002,10 @@ def save_plot(file_path, y_list, x_list=None, x_lim=None, y_lim=None,
         Label for the y-axis. Default is "Intensity".
     marker : str, optional
         Marker style for data points. Default is 'o'.
-    linestyle : str, optional
-        Line style (e.g., '-', '--', '-.', ':'). Default is '--'.
     color : str, optional
         Color for the plot. Default is 'red'.
+    linestyle : str, optional
+        Line style (e.g., '-', '--', '-.', ':'). Default is '--'.
     font_size : int, optional
         Font size for axis labels. Default is 12.
     font_weight : str, optional
@@ -1023,8 +1024,6 @@ def save_plot(file_path, y_list, x_list=None, x_lim=None, y_lim=None,
 
     Raises
     ------
-    ValueError
-        If the file path contains Windows-style backslashes.
     IOError
         If saving the figure fails.
     """
@@ -1130,8 +1129,8 @@ def save_q_plot(file_path, q_list, list_data, q_standard=None, start=0,
     ax.plot(q_list, list_data, linestyle=line_style, marker=marker,
             color="green", label="Measured")
     if q_standard is not None:
-        q_max = np.max(list_data)
-        ax.vlines(q_standard, ymin=0, ymax=q_max,
+        y_max = np.max(list_data)
+        ax.vlines(q_standard, ymin=0, ymax=y_max,
                   linestyles="solid", color="red", label="Theory")
     ax.tick_params(axis="both", labelsize=font_size)
     for tick_label in ax.get_xticklabels() + ax.get_yticklabels():

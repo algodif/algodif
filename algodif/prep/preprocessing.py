@@ -25,9 +25,8 @@ Module of methods in the preprocessing stage:
 
     -   Remove background of 1D signal or 2D image.
     -   Smooth signal/image using an SVD-based method.
-    -   Methods for locate peaks with sub-pixel accuracy.
-    -   Fit gaussian or skew gaussian to a peak.
-    -
+    -   Detect peaks and locate them with sub-pixel accuracy.
+    -   Fit a Gaussian or a skewed Gaussian to a peak.
 """
 
 
@@ -71,6 +70,7 @@ def remove_background_based_als(list_data, ld=1e6, weight=0.05, num_iter=10):
     [1] : https://doi.org/10.1021/ac051370e
     [2] : https://irfpy.irf.se/projects/ica/_modules/irfpy/ica/baseline.html
     """
+    list_data = np.asarray(list_data)
     if list_data.ndim != 1:
         raise ValueError("Input must be a 1D array!!!")
     size = len(list_data)
@@ -112,6 +112,7 @@ def remove_background_based_arpls(list_data, ld=1e5, weight=0.05, num_iter=10):
     [1] : https://doi.org/10.1039/C4AN01061B
     [2] : https://irfpy.irf.se/projects/ica/_modules/irfpy/ica/baseline.html
     """
+    list_data = np.asarray(list_data)
     if list_data.ndim != 1:
         raise ValueError("Input must be a 1D array!!!")
     size = len(list_data)
@@ -212,7 +213,7 @@ def remove_image_background_based_arpls(image, axis=0, ld=1e6, weight=0.05,
                                         prefer="processes"):
     """
     Apply 1D background removal method, Asymmetrically Reweighted Penalized
-    Least Squares (arPLS) (Ref. [1,2 ]), along an axis of an image.
+    Least Squares (arPLS) (Ref. [1, 2]), along an axis of an image.
 
     Parameters
     ----------
@@ -281,7 +282,7 @@ def get_peaks(list_data, width=15, sigma=0, norm=True, threshold=0.05):
     width : int, optional
         Minimum width of the peaks.
     sigma : int, optional
-        Standard deviation for Gaussian smoothing If larger than 0.
+        Standard deviation for Gaussian smoothing if larger than 0.
     norm : bool, optional
         If True, normalize the signal to its maximum before peak detection.
     threshold : float, optional
@@ -298,9 +299,9 @@ def get_peaks(list_data, width=15, sigma=0, norm=True, threshold=0.05):
     if sigma > 0:
         list_data = ndi.gaussian_filter1d(list_data, sigma)
     if norm:
-        max = np.max(list_data)
-        if max != 0.0:
-            list_data = list_data / max
+        max_val = np.max(list_data)
+        if max_val != 0.0:
+            list_data = list_data / max_val
     peaks = sig.find_peaks(list_data, width=width, prominence=threshold)[0]
     return peaks
 
@@ -344,15 +345,15 @@ def _locate_peak_subpixel(list_data, method="diff"):
 
 def __gauss_function(x, a, b, c, d):
     """
-    Supplementary method for fit_gaussian_peak method
+    Supplementary method for fit_gaussian_peak method.
     """
-    y = a * np.exp(-np.power((x - c) / (2 * b ** 2), 2)) + d
+    y = a * np.exp(-np.power(x - c, 2) / (2 * b ** 2)) + d
     return y
 
 
 def fit_gaussian_peak(list_data, sigma=0, return_para=False):
     """
-    Fit a Gaussian peak to 1D array.
+    Fit a Gaussian peak to a 1D array.
 
     Parameters
     ----------
@@ -367,12 +368,13 @@ def fit_gaussian_peak(list_data, sigma=0, return_para=False):
     -------
     fit_data : 1D array
         The fitted Gaussian data.
-    c : float
-        The fitted peak center.
+    peak_pos : float
+        The fitted peak position (index).
     can_fit : bool
         Whether the fitting was successful.
     (optional) a, b, c, d : float
-        Amplitude, width, center, baseline.
+        Amplitude, width, center (relative to the middle index), baseline.
+        If return_para is True and the fitting succeeds.
     """
     if sigma > 0:
         list_data = ndi.gaussian_filter1d(list_data, sigma)
@@ -411,6 +413,9 @@ def __skewed_gauss_function(x, a, b, c, d, skew):
 
 
 def __locate_skew_peak(a, loc=0, scale=1):
+    """
+    Find the mode of a skew-normal distribution.
+    """
     result = minimize_scalar(
         lambda x: -skewnorm.pdf(x, a, loc=loc, scale=scale),
         bounds=(loc - 5*scale, loc + 5*scale), method="bounded")
@@ -434,12 +439,13 @@ def fit_skewed_gaussian_peak(list_data, sigma=0, return_para=False):
     -------
     fit_data : 1D array
         The fitted skewed Gaussian data.
-    c : float
-        The fitted peak center.
+    peak_pos : float
+        The fitted peak position (index of the mode).
     can_fit : bool
         Whether the fitting was successful.
     (optional) a, b, c, d, skew : float
-        Amplitude, width, center, baseline, skewness.
+        Amplitude, width, center (relative to the middle index), baseline,
+        skewness. If return_para is True and the fitting succeeds.
     """
     if sigma > 0:
         list_data = ndi.gaussian_filter1d(list_data, sigma)
@@ -503,8 +509,9 @@ def select_gaussian_peaks(list_data, peaks, tol=0.2, width=15, sigma=0,
 
     Returns
     -------
-    list of int
-        Indices of the selected good peaks.
+    ndarray
+        Selected peaks: sub-pixel positions if sub_pixel is True, otherwise
+        the original indices.
     """
     if sigma > 0:
         list_data = ndi.gaussian_filter1d(list_data, sigma)
@@ -576,7 +583,7 @@ def locate_peaks_subpixel(list_data, peaks, radius=11, sigma=1,
 
     Returns
     -------
-    list of float
+    ndarray
         Sub-pixel positions of peaks.
     """
     peaks_sub = []
@@ -616,13 +623,13 @@ def locate_gaussian_peaks_subpixel(list_data, peaks, radius=11, sigma=1,
     sigma : float, optional
         Standard deviation for Gaussian smoothing.
     skew_fit : bool, optional
-        Apply skewed Gaussian fitting if True
+        Apply skewed Gaussian fitting if True.
     show : bool, optional
         Display the plotting result for each peak.
 
     Returns
     -------
-    list of float
+    ndarray
         Sub-pixel positions of peaks.
     """
     peaks_sub = []
@@ -669,25 +676,26 @@ def smooth_filter_based_svd(list_data, lambda_threshold=0.5, rank=5):
     Smooth a 1D signal using Singular Value Decomposition (SVD) with
     soft-thresholding.
 
-    Parameters:
+    Parameters
     ----------
     list_data : np.ndarray
         The 1D input signal to be smoothed.
-    rank : int, optional (default=5)
-        Number of singular values (components) to retain for reconstruction.
-        Must be a positive integer less than the data length.
     lambda_threshold : float, optional (default=0.5)
         Threshold used for soft-thresholding the singular values.
         Must be non-negative.
+    rank : int, optional (default=5)
+        Number of singular values (components) to retain for reconstruction.
+        Must be a positive integer not exceeding half of the data length.
 
-    Returns:
+    Returns
     -------
     np.ndarray
         The smoothed signal, scaled to the original amplitude.
     """
     rank = int(rank)
-    if rank > len(list_data) // 2:
-        raise ValueError("`rank` must not exceed the length of the signal.")
+    if rank < 1 or rank > len(list_data) // 2:
+        raise ValueError("`rank` must be a positive integer not exceeding "
+                         "half of the length of the signal.")
     if lambda_threshold < 0:
         raise ValueError("`lambda_threshold` must be non-negative.")
     max_value = np.max(list_data)
@@ -715,23 +723,30 @@ def smooth_filter_based_svd(list_data, lambda_threshold=0.5, rank=5):
 def smooth_image_based_svd(image, axis=0, lambda_threshold=0.5, rank=5,
                            ncore=None, prefer="processes"):
     """
-    Apply SVD-based 1D smooth filter to an image.
+    Apply the SVD-based 1D smoothing filter along an axis of an image.
 
-    Parameters:
+    Parameters
     ----------
     image : np.ndarray
         2D array.
-    rank : int, optional (default=5)
-        Number of singular values (components) to retain for reconstruction.
-        Must be a positive integer less than the data length.
+    axis : int
+        Axis along which the method is applied.
     lambda_threshold : float, optional (default=0.5)
         Threshold used for soft-thresholding the singular values.
         Must be non-negative.
+    rank : int, optional (default=5)
+        Number of singular values (components) to retain for reconstruction.
+        Must be a positive integer not exceeding half of the data length.
+    ncore : int, optional
+        Number of cpu-cores used for computing. Automatically selected if None.
+    prefer : {"threads", "processes"}
+        Preferred parallel backend ("threads" for I/O bound tasks or
+        "processes" for CPU-bound tasks).
 
-    Returns:
+    Returns
     -------
     np.ndarray
-        The smoothed signal, scaled to the original amplitude.
+        The smoothed image.
     """
     max_cores = cpu_count()
     if ncore is None:
@@ -763,14 +778,14 @@ def locate_peaks_by_ranked_descent(list_data, sigma=0):
     sorting and index-coupling method (to be published in Ref [1]).
     The method locates peaks with their left and right shoulders.
 
-    Parameters:
+    Parameters
     ----------
     list_data : np.ndarray
         1D input signal.
     sigma : float, optional
         Standard deviation for Gaussian smoothing.
 
-    Returns:
+    Returns
     -------
     tuple of ndarray
         (Peak locations, left-peak locations, right-peak locations)
@@ -826,32 +841,31 @@ def locate_peaks_by_ranked_descent(list_data, sigma=0):
 def get_peaks_by_ranked_descent(list_data, width=15, ratio=0.1, sigma=2,
                                 abs_threshold=None, return_shoulder=False):
     """
-    Locating peaks of 1D signal based on sorting and index-coupling method
+    Locate peaks of 1D signal based on sorting and index-coupling method
     (to be published in Ref [1]).
 
-    Parameters:
+    Parameters
     ----------
     list_data : np.ndarray
         1D input signal.
     width : int
         Minimum width of a peak.
     ratio : float
-        To select peaks above the ratio. Ratio is the value of dividing
-        of the distance of a peak and its fitted baseline vs the mean value of
-        data around a peak.
+        Minimum ratio between the peak height above its fitted baseline
+        and the mean signal value around the peak.
     sigma : float, optional
         Standard deviation for Gaussian smoothing.
     abs_threshold : float, optional
-        Use it to select peaks with distance (from a peak to its baseline)
-        larger than the threshold. This is absolute value (e.g.
-        intensity count)
+        Select peaks whose height above the baseline is larger than this
+        absolute value (e.g. intensity count).
     return_shoulder : bool, optional
         Return shoulder peaks (left and right) if True.
 
-    Returns:
+    Returns
     -------
-    ndarray
-        Peak locations
+    ndarray or tuple of ndarray
+        Peak locations, or (peak, left-shoulder, right-shoulder) locations
+        if return_shoulder is True.
 
     References
     ----------
@@ -870,7 +884,7 @@ def get_peaks_by_ranked_descent(list_data, width=15, ratio=0.1, sigma=2,
     if npoint < 5:
         raise ValueError("Number of data points must be >= 5")
     if width < 5 or (width > npoint - 5):
-        warnings.warn(f"Width must be in the range of (5, {npoint-5}))!!!",
+        warnings.warn(f"Width must be in the range of [5, {npoint - 5}]!!!",
                       UserWarning)
         width = np.clip(width, 5, npoint - 5)
     m_peaks, l_peaks, r_peaks = locate_peaks_by_ranked_descent(list_data)
@@ -969,8 +983,8 @@ def remove_image_background_ranked_descent(image, axis=0, width=15,
         2D input array.
     axis : int, optional
         Axis along which the method is applied. Default is 0.
-        If axis=0, processing is performed along columns.
-        If axis=1, processing is performed along rows.
+        If axis=0, each row is processed.
+        If axis=1, each column is processed.
     width : int, optional
         Minimum width of a peak. Default is 15.
     ratio : float, optional
@@ -1017,7 +1031,7 @@ def remove_image_background_ranked_descent(image, axis=0, width=15,
             sigma=sigma) for idx in range(height))
         img_corr = np.asarray(img_corr)
     else:
-        img_corr = np.zeros_like(image)
+        img_corr = np.zeros_like(image, dtype=float)
         for i in range(height):
             img_corr[i] = remove_background_ranked_descent(image[i],
                                                            width=width,
