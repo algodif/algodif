@@ -5,7 +5,7 @@ Methods and software for calibrating multi-element energy-dispersive X-ray (EDX)
 processing and visualizing energy-dispersive X-ray diffraction tomography (EDDT) data acquired 
 at a hard X-ray synchrotron beamline.
 
-A detailed description  is provided in the under reviewed paper: "Algorithms and software tools for 
+A detailed description is provided in the paper under review: "Algorithms and software tools for 
 energy-dispersive X-ray diffraction tomography," Nghia T. Vo, Zhong Zhong, and Michael Drakopoulos. 
 
 The core of this work is to address a problem: 
@@ -23,10 +23,33 @@ However, the algorithms in the software are not restricted to the GeRM detector.
 Features
 ========
 - Methods for peak detection and sub-pixel location.
-- Methods for matching measured peaks to reference peaks
+- Methods for matching measured peaks to reference peaks.
 - Methods for energy calibration of an EDX detector.
 - Methods for q-calibration of an EDX detector and the GeRM detector.
 - GUIs/CLIs for processing and visualizing EDDT data from the GeRM detector. 
+
+Installation
+============
+
+Algodif can be installed using pip or conda:
+
+```commandline
+pip install algodif
+```
+
+```commandline
+conda install -c algotom -c conda-forge algodif
+```
+
+or from source:
+
+```commandline
+git clone https://github.com/algodif/algodif.git
+cd algodif
+pip install .
+```
+
+Documentation: https://algodif.readthedocs.io
 
 Introduction
 ============
@@ -46,7 +69,7 @@ tomographic reconstruction. By scanning the sample along the Y-axis, a 2D
 cross-sectional map can be constructed. Importantly, each pixel in this map 
 contains a 1D diffraction pattern corresponding to a specific location within 
 the sample. This is why the technique is called energy-dispersive X-ray diffraction 
-tomography (EDDT): it enables direct tomographic imaging without computing 
+tomography (EDDT): it enables direct tomographic imaging without the computation 
 required in conventional tomography. 
 
 ![img](https://github.com/algodif/algodif/raw/main/figs/eddt_technique.png)
@@ -65,7 +88,7 @@ Energy calibration
 ------------------
 
 For detector energy calibration, the key idea is to maximize the fluorescence 
-signal while minimizing the diffraction signal. We use a sample combined of thin foils 
+signal while minimizing the diffraction signal. We use a sample composed of thin foils 
 of Sn, Pb, and Au to cover a wide energy range from low to high. A small amount of U is 
 included to extend the calibration range beyond 110 keV. The results before and after energy 
 calibration are shown below.
@@ -76,7 +99,7 @@ calibration are shown below.
 Q calibration
 -------------
 
-q-calibration, or reciprocal space calibration,is a major routine in the regular 
+q-calibration, or reciprocal space calibration, is a major routine in the regular 
 use of this detector at the HEX beamline. The detector needs to be calibrated when 
 the theta angle changes or after a few days of use. In contrast to energy calibration, 
 q-calibration requires minimizing fluorescence and maximizing diffraction signals. 

@@ -24,7 +24,7 @@ Using conda
 
       .. code-block:: console
 
-         conda install -c conda-forge algodif
+         conda install -c algotom -c conda-forge algodif
 
     + If installing to a new environment:
 
@@ -33,7 +33,7 @@ Using conda
          conda create -n algodif
          conda activate algodif
          conda install python
-         conda install -c conda-forge algodif
+         conda install -c algotom -c conda-forge algodif
 
 Using pip
 ---------

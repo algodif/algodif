@@ -22,6 +22,8 @@ Affiliation = 'NSLS-II, Brookhaven National Laboratory, US'
 project = 'Algodif'
 copyright = '2026, Nghia T. Vo, ' + Affiliation
 author = 'Nghia T. Vo'
+release = '1.0.0'
+version = '1.0'
 
 
 # -- General configuration ---------------------------------------------------
