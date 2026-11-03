@@ -1,9 +1,6 @@
+import warnings
 import numpy as np
 import scipy.ndimage as ndi
-import scipy.signal as sig
-from scipy import sparse
-from scipy.linalg import cholesky
-from scipy.sparse.linalg import spsolve
 import xraydb
 
 
@@ -89,11 +86,23 @@ def make_fluorescence_spectrum(fluorescent_lines, energy_step, data_point,
     theo_energies = fluorescent_lines[:, 0]
     theo_intensities = fluorescent_lines[:, 1]
     inter_energies = np.arange(data_point) * energy_step
+    max_inter_e = inter_energies[-1]
+    max_theo_e = np.max(theo_energies)
+    if max_inter_e < max_theo_e:
+        warnings.warn(f"\n\nThe generated spectrum's maximum energy {max_inter_e:3f} keV"
+                      f" is below the theoretical maximum {max_theo_e:3f} keV\n"
+                      f"with energy step {energy_step:3f} and {data_point} data"
+                      f" points. Use an energy step of at least "
+                      f"{max_theo_e / (data_point - 1):.4f}.\n")
+
     inter_intensities = np.zeros_like(inter_energies)
     for i, energy in enumerate(theo_energies):
-        nearest_idx = np.argmin(np.abs(energy - inter_energies))
-        inter_energies[nearest_idx] = energy
-        inter_intensities[nearest_idx] = theo_intensities[i]
+        diff = np.abs(energy - inter_energies)
+        min_diff = np.min(diff)
+        if min_diff <= energy_step:
+            nearest_idx = np.argmin(diff)
+            inter_energies[nearest_idx] = energy
+            inter_intensities[nearest_idx] = theo_intensities[i]
     if sigma > 0:
         inter_intensities = ndi.gaussian_filter1d(inter_intensities, sigma)
     if norm:
@@ -312,6 +321,43 @@ def estimate_q_step_germ_detector(strip_idx, energy_step, two_theta,
     return q_step
 
 
+def estimate_q_step_full_germ_detector(energy_step, two_theta,
+                                       total_germ_strip=192,
+                                       strip_size=0.25, sample_slit=250.0,
+                                       sample_detector=2000.0):
+    """
+    Estimate the scattering-vector step for all GeRM detector strips.
+
+    Parameters
+    ----------
+    energy_step : float
+        Energy increment in keV.
+    two_theta : float
+        Nominal scattering angle at the detector center, in degrees.
+    total_germ_strip : int, optional
+        Total number of detector strips.
+    strip_size : float, optional
+        Strip pitch in mm.
+    sample_slit : float, optional
+        Sample-to-slit distance in mm.
+    sample_detector : float, optional
+        Sample-to-detector distance in mm.
+
+    Returns
+    -------
+    float
+        Scattering-vector increment in inverse angstroms.
+    """
+    list_q_step = []
+    for i in range(total_germ_strip):
+        q_step = estimate_q_step_germ_detector(
+            i, energy_step, two_theta, total_germ_strip=total_germ_strip,
+            strip_size=strip_size, sample_slit=sample_slit,
+            sample_detector=sample_detector)
+        list_q_step.append(q_step)
+    return np.asarray(list_q_step)
+
+
 def get_two_theta_list_germ_detector(two_theta, total_germ_strip=192,
                                      strip_size=0.25, sample_slit=250.0,
                                      sample_detector=2000.0):
@@ -377,13 +423,25 @@ def make_diffraction_pattern(list_q_theory, list_intensity, q_step, data_point,
     intensity replaces earlier values. Normalization requires a nonzero
     maximum intensity.
     """
+    list_q_theory = np.asarray(list_q_theory)
     q_list = np.arange(data_point) * q_step
     list_inten = np.zeros_like(q_list)
     if len(list_q_theory) != len(list_intensity):
         raise ValueError("Number of q-values and intensities are not the same")
+    max_inter_q = q_list[-1]
+    max_theo_q = np.max(list_q_theory)
+    if max_inter_q < max_theo_q:
+        warnings.warn(f"\n\nThe generated pattern's maximum q {max_inter_q:3f} (1/A)"
+                      f" is below the theoretical maximum {max_theo_q:3f} (1/A)\n"
+                      f"with q-step {q_step:3f} and {data_point} data points. "
+                      f"Use an energy step of at least "
+                      f"{max_theo_q / (data_point - 1):.4f}.\n")
     for i, q in enumerate(list_q_theory):
-        pos = np.argmin(np.abs(q - q_list))
-        list_inten[pos] = list_intensity[i]
+        diff = np.abs(q - q_list)
+        min_diff = np.min(diff)
+        if min_diff <= q_step:
+            pos = np.argmin(diff)
+            list_inten[pos] = list_intensity[i]
     if sigma > 0:
         list_inten = ndi.gaussian_filter1d(list_inten, sigma)
     if norm:

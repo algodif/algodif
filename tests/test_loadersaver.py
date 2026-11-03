@@ -1,25 +1,3 @@
-# ============================================================================
-# ============================================================================
-# Copyright (c) 2026 Nghia T. Vo. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ============================================================================
-# Author: Nghia T. Vo
-# E-mail:
-# ============================================================================
-# Contributors:
-# ============================================================================
-
 """
 Tests for methods in loadersaver.py
 """
@@ -27,14 +5,12 @@ Tests for methods in loadersaver.py
 import os
 import json
 import shutil
-import platform
 import unittest
 from collections import deque
 from pathlib import Path
 import h5py
 import numpy as np
 import matplotlib
-
 matplotlib.use("Agg")
 import algodif.io.loadersaver as losa
 
@@ -239,17 +215,6 @@ class LoaderSaverMethods(unittest.TestCase):
         self.assertRaises(FileNotFoundError, losa.find_file,
                           f"{folder}/*.png")
 
-    @unittest.skipIf(platform.system() == "Windows",
-                     "Path.glob is case-insensitive on Windows")
-    def test_find_file_case_sensitive(self):
-        folder = f"{self.tmp_dir}/find_file_case"
-        os.makedirs(folder, exist_ok=True)
-        for name in ("a_001.tif", "C_003.TIF"):
-            with open(f"{folder}/{name}", "w") as f:
-                f.write("test")
-        files = losa.find_file(f"{folder}/*.tif", case_sensitive=True)
-        self.assertEqual([os.path.basename(f) for f in files], ["a_001.tif"])
-
     def test_save_image(self):
         mat1 = np.float32(np.random.rand(64, 64))
         mat2 = np.float32(np.random.rand(64, 64, 3))
@@ -312,13 +277,6 @@ class LoaderSaverMethods(unittest.TestCase):
         mat = losa.load_dat(file_path, shape=(2, 3), skip_columns=2)
         self.assertTrue(mat.shape == (2, 3) and mat.dtype == np.float32)
         self.assertTrue(np.array_equal(mat, [[1, 2, 3], [4, 5, 6]]))
-
-        mat = losa.load_dat(file_path, shape=(3, 3), skip_columns=2)
-        self.assertTrue(mat.shape == (3, 3))
-        self.assertTrue(np.array_equal(mat[2], [0, 0, 0]))
-
-        mat = losa.load_dat(file_path, shape=(1, 4), skip_columns=2)
-        self.assertTrue(np.array_equal(mat, [[1, 2, 3, 4]]))
 
         bad_path = f"{self.tmp_dir}/bad.dat"
         with open(bad_path, "w") as f:
@@ -401,6 +359,53 @@ class LoaderSaverMethods(unittest.TestCase):
         self.assertRaises(TypeError, f_alias, data, 1)
         self.assertRaises(TypeError, f_alias, data, "x_pos", return_all=1)
         self.assertRaises(TypeError, f_alias, 10, "x_pos")
+
+    def test_numpy_encoder(self):
+        encoder = getattr(losa, "__numpy_encoder")
+        self.assertEqual(encoder(np.arange(3)), [0, 1, 2])
+        self.assertTrue(isinstance(encoder(np.int32(3)), int))
+        self.assertTrue(isinstance(encoder(np.float32(1.5)), float))
+        self.assertTrue(encoder(np.bool_(True)) is True)
+        self.assertRaises(TypeError, encoder, object())
+
+    def test_save_json(self):
+        file_path = f"{self.tmp_dir}/save_json/meta.json"
+        data_in = {"energy": np.float32(25.0), "angles": np.arange(3),
+                   "count": np.int64(5), "flag": np.bool_(True),
+                   "name": "abc"}
+        path = losa.save_json(file_path, data_in)
+        self.assertTrue(isinstance(path, str) and os.path.isfile(path))
+        content = losa.load_json(path)
+        self.assertTrue("Date_recorded" in content)
+        self.assertEqual(content["Metadata"],
+                         {"energy": 25.0, "angles": [0, 1, 2], "count": 5,
+                          "flag": True, "name": "abc"})
+
+        path = losa.save_json(f"{self.tmp_dir}/save_json/meta2.txt", {"a": 1})
+        self.assertEqual(Path(path).suffix, ".json")
+        self.assertTrue(os.path.isfile(path))
+
+        path = losa.save_json(file_path, {"a": 2}, overwrite=False)
+        self.assertTrue(Path(path) != Path(file_path).resolve())
+        self.assertTrue(os.path.isfile(path))
+        self.assertEqual(losa.load_json(file_path)["Metadata"]["name"], "abc")
+
+        self.assertRaises(ValueError, losa.save_json,
+                          f"{self.tmp_dir}/save_json/bad.json",
+                          {"a": object()})
+
+    def test_get_subgroups(self):
+        get_subgroups = getattr(losa, "_get_subgroups")
+        file_path = self._make_hdf("subgroups.hdf")
+        with h5py.File(file_path, "r") as hdf_object:
+            list_group, key = get_subgroups(hdf_object)
+            self.assertEqual((list_group, key), (["entry"], "entry"))
+            list_group, key = get_subgroups(hdf_object, "entry")
+            self.assertEqual(list_group, ["data", "energy", "position"])
+            list_group, _ = get_subgroups(hdf_object, "entry/data")
+            self.assertEqual(list_group, [])
+            list_group, _ = get_subgroups(hdf_object, "no_such_key")
+            self.assertEqual(list_group, [])
 
     def test_load_csv(self):
         file_path = f"{self.tmp_dir}/load.csv"

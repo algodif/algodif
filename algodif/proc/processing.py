@@ -29,16 +29,17 @@ detector images. The calibration is performed by detecting spectral peaks,
 matching them to known reference values, and fitting polynomial mappings
 from pixel/index space to physical units.
 
-Core features include:
-- Robust peak detection with optional smoothing and subpixel refinement
+Core functions include:
+- Generate gaussian peak signal from discrete values.
 - Peak matching via polynomial optimization between generated gaussian
-  spectrum.
-- Energy-axis calibration for spectra and images
-- q-axis calibration for generic data and GeRM detector geometries
+  spectrum or pattern.
+- Energy-axis calibration for spectra and images.
+- q-axis calibration for diffraction data using the GeRM detector geometry.
+- q-axis calibration for generic diffraction data.
 """
 
-import multiprocessing as mp
-from joblib import Parallel, delayed
+import warnings
+from joblib import Parallel, delayed, cpu_count
 import numpy as np
 import scipy.ndimage as ndi
 from scipy import stats
@@ -47,17 +48,17 @@ import algodif.prep.preprocessing as prep
 import algodif.util.utility as util
 
 
-def __cost_function(poly_facts, y1, x2, y2, metric="mean"):
+def __cost_function(poly_coefs, y1, x2, y2, metric="mean"):
     """
     Compute a cost value between a reference signal and a generated signal.
 
-    The scaling and shifting are defined by a polynomial applied to `x2`,
+    The transformation are defined by a polynomial warp applied to `x2`,
     followed by interpolation of `y2` onto the transformed coordinates.
 
     Parameters
     ----------
-    poly_facts : array_like
-        Polynomial coefficients defining the scale/shift transformation.
+    poly_coefs : array_like
+        Polynomial coefficients defining the transformation.
         Length defines the polynomial degree.
     y1 : array_like
         Reference signal.
@@ -74,10 +75,7 @@ def __cost_function(poly_facts, y1, x2, y2, metric="mean"):
     float
         Cost value to be minimized.
     """
-    degree = len(poly_facts) - 1
-    x2_ss = np.sum(np.asarray(
-        [factor * x2 ** (degree - i) for i, factor in enumerate(poly_facts)]),
-        axis=0)
+    x2_ss = np.polyval(poly_coefs, x2)
     y2_ss = np.interp(x2_ss, x2, y2)
     if metric != "mean":
         metric = 1 - stats.pearsonr(y2_ss, y1)[0]
@@ -86,12 +84,15 @@ def __cost_function(poly_facts, y1, x2, y2, metric="mean"):
     return metric
 
 
-def _find_scale_shift(y1, y2, initial_guess=[1.0, 0.0],
-                      bounds=[(0.85, 1.15), (-300, 300)], metric="mean"):
+def find_polynomial_warp(y1, y2, initial_guess=(1.0, 0.0),
+                         bounds=((0.75, 1.25), (-300, 300)), metric="mean"):
     """
-    Estimate scale and shift parameters aligning `y2` to `y1`.
+    Estimate polynomial coefficients for aligning y2 to y1.
     The parameters are optimized by minimizing a cost function using the
     Nelder–Mead algorithm.
+
+    The polynomial degree is determined by the number of coefficients in
+    initial_guess and the number of bounds.
 
     Parameters
     ----------
@@ -100,7 +101,7 @@ def _find_scale_shift(y1, y2, initial_guess=[1.0, 0.0],
     y2 : array_like
         Signal to be scaled and shifted.
     initial_guess : array_like, optional
-        Initial guess for the scale and shift parameters.
+        Initial guess polynomial coefficients, high-to-low order.
     bounds : sequence of tuple or None, optional
         Bounds for the optimization parameters. If None, no bounds are applied.
     metric : {"mean", "pearson"}, optional
@@ -109,11 +110,14 @@ def _find_scale_shift(y1, y2, initial_guess=[1.0, 0.0],
     Returns
     -------
     ndarray
-        Optimized scale and shift parameters.
+        Polynomial coefficients for warping, high-to-low order.
     """
     x2 = np.arange(len(y2))
     ss0 = np.array(initial_guess)
     if bounds is not None:
+        if len(initial_guess) != len(bounds):
+            raise ValueError("initial_guess and bounds must have the same "
+                             "length.")
         results = minimize(__cost_function, ss0,
                            args=tuple([y1, x2, y2, metric]),
                            method="Nelder-Mead", bounds=bounds,
@@ -122,21 +126,21 @@ def _find_scale_shift(y1, y2, initial_guess=[1.0, 0.0],
         results = minimize(__cost_function, ss0,
                            args=tuple([y1, x2, y2, metric]),
                            method="Nelder-Mead", options={"xatol": 1e-8})
-    return results.x
+    return np.asarray(results.x)
 
 
-def _correct_scale_shift(y, poly_facts, left=0, right=0):
+def apply_polynomial_warp(y, poly_coefs, left=0, right=0):
     """
-    Apply a polynomial-based scale and shift correction to a signal.
-    The correction is performed by transforming the coordinate axis and
-    interpolating the signal onto the new coordinates.
+    Apply a polynomial warp to a signal.
+    The correction is performed by transforming the coordinate axis (pixel)
+    and interpolating the signal onto the new coordinates.
 
     Parameters
     ----------
     y : array_like
-        Input signal to be corrected.
-    poly_facts : array_like
-        Polynomial coefficients defining the scale/shift transformation.
+        1D signal to be corrected.
+    poly_coefs : array_like
+        Polynomial coefficients defining the transformation. High-to-low order.
     left : float, optional
         Value used for extrapolation to the left.
     right : float, optional
@@ -147,29 +151,79 @@ def _correct_scale_shift(y, poly_facts, left=0, right=0):
     ndarray
         Corrected signal.
     """
-    degree = len(poly_facts) - 1
     x = np.arange(len(y))
-    x1 = np.sum(np.asarray(
-        [factor * x ** (degree - i) for i, factor in enumerate(poly_facts)]),
-        axis=0)
+    x1 = np.polyval(poly_coefs, x)
     y_corr = np.interp(x1, x, y, left=left, right=right)
     return y_corr
 
 
-def _align_peaks_coarse(reference_peaks, measured_peaks, shift_start,
-                        shift_stop, shift_step=1, ratio_start=-0.15,
-                        ratio_stop=0.15, ratio_step=0.005, metric="pearson"):
+def make_gaussian_peak_signal(discrete_vals, min_val, max_val, step_val,
+                              size=5):
     """
-    Perform a coarse search to align measured peaks to reference peaks.
-    The alignment is achieved by scanning over scale and shift values and
-    selecting the combination that minimizes the chosen cost metric.
+    Generate a 1D signal composed of Gaussian-shaped peaks at discrete values.
 
     Parameters
     ----------
-    reference_peaks : array_like
-        Reference peak positions.
-    measured_peaks : array_like
-        Measured peak positions to be aligned.
+    discrete_vals : array_like
+        Discrete values at which peaks are located.
+    min_val : float
+        Minimum value of the output grid.
+    max_val : float
+        Maximum value of the output grid.
+    step_val : float
+        Step size of the output grid.
+    size : int, optional
+        Control the width of the Gaussian smoothing.
+
+    Returns
+    -------
+    y : ndarray
+        Normalized 1D array containing Gaussian-shaped peaks.
+    idx : ndarray
+        Indices of the peak positions on the output grid.
+    order : ndarray
+        Indices mapping each peak to its original order in `discrete_vals`.
+    """
+    x_list = np.arange(min_val, max_val + step_val, step_val)
+    if len(x_list) == 0:
+        raise ValueError("Please check min-, max-, or step-values")
+    y_list = np.zeros_like(x_list)
+    list_idx = []
+    list_order = []
+    for i, x in enumerate(discrete_vals):
+        y_list1 = np.zeros_like(x_list)
+        x_diff = np.abs(x - x_list)
+        min_xdiff = np.min(x_diff)
+        if min_xdiff > step_val:
+            warnings.warn(f"Step size need to be at least of: {min_xdiff}"
+                          f"for a smoothing mapping discrete values")
+        pos_min = np.argmin(x_diff)
+        if pos_min not in list_idx:
+            y_list1[pos_min] = 1
+            list_idx.append(pos_min)
+            list_order.append(i)
+        if size > 0 and len(list_idx) > 0:
+            y_list1 = ndi.gaussian_filter1d(y_list1, size // 2 + 1)
+        y_list = np.max(np.vstack((y_list, y_list1)), axis=0)
+    if np.max(y_list) > 0.0:
+        y_list = y_list / np.max(y_list)
+    return y_list, np.asarray(list_idx), np.asarray(list_order)
+
+
+def estimate_scale_shift(reference_signal, measured_signal, shift_start,
+                         shift_stop, shift_step=1, ratio_start=-0.15,
+                         ratio_stop=0.15, ratio_step=0.005, metric="pearson"):
+    """
+    Perform a coarse search to align measured signal to reference signal.
+    The alignment is achieved by scanning over scale and shift values and
+    selecting the combination that minimizes the cost function.
+
+    Parameters
+    ----------
+    reference_signal : array_like
+        Reference signal (fluorescent spectrum or diffraction pattern).
+    measured_signal : array_like
+        Measured signal to be aligned.
     shift_start : float
         Start value of the shift range.
     shift_stop : float
@@ -190,6 +244,8 @@ def _align_peaks_coarse(reference_peaks, measured_peaks, shift_start,
     tuple of float
         Optimal (scale, shift) values.
     """
+    if len(reference_signal) != len(measured_signal):
+        raise ValueError("Signals are not the same length!")
     list_shift = np.arange(shift_start, shift_stop + shift_step, shift_step)
     num_shift = len(list_shift)
     list_scale = 1.0 + np.arange(ratio_start, ratio_stop + ratio_step,
@@ -198,68 +254,22 @@ def _align_peaks_coarse(reference_peaks, measured_peaks, shift_start,
     mat_metric = np.ones((num_scale, num_shift), dtype=np.float32)
     for i, scale in enumerate(list_scale):
         for j, shift in enumerate(list_shift):
-            measured_peaks1 = _correct_scale_shift(measured_peaks,
-                                                   [scale, shift])
+            corrected_signal = apply_polynomial_warp(measured_signal,
+                                                     [scale, shift])
             if metric != "mean":
-                metric = 1 - stats.pearsonr(reference_peaks,
-                                            measured_peaks1)[0]
+                metric = 1 - stats.pearsonr(reference_signal,
+                                            corrected_signal)[0]
             else:
                 metric = np.mean(
-                    np.clip((reference_peaks - measured_peaks1), 0, None))
+                    np.clip((reference_signal - corrected_signal), 0, None))
             mat_metric[i, j] = metric
     (i_pos, j_pos) = np.unravel_index(np.argmin(mat_metric, axis=None),
                                       mat_metric.shape)
     return list_scale[i_pos], list_shift[j_pos]
 
 
-def _make_gaussian_peaks(discrete_vals, min_val, max_val, step_val, size=5):
-    """
-    Generate a 1D signal composed of Gaussian-shaped peaks at discrete values.
-    Each discrete value is mapped to the nearest grid point and optionally
-    smoothed with a Gaussian filter. The final signal is normalized to unity.
-
-    Parameters
-    ----------
-    discrete_vals : array_like
-        Discrete values at which peaks are located.
-    min_val : float
-        Minimum value of the output grid.
-    max_val : float
-        Maximum value of the output grid.
-    step_val : float
-        Step size of the output grid.
-    size : int, optional
-        Controls the width of the Gaussian smoothing. If zero or negative,
-        no smoothing is applied.
-
-    Returns
-    -------
-    y : ndarray
-        Normalized 1D array containing Gaussian-shaped peaks.
-    idx : ndarray
-        Indices of the peak positions on the output grid.
-    order : ndarray
-        Indices mapping each peak to its original order in `discrete_vals`.
-    """
-    x_list = np.arange(min_val, max_val + step_val, step_val)
-    y_list = np.zeros_like(x_list)
-    list_idx = []
-    list_order = []
-    for i, x in enumerate(discrete_vals):
-        y_list1 = np.zeros_like(x_list)
-        pos_min = np.argmin(np.abs(x - x_list))
-        y_list1[pos_min] = 1
-        list_idx.append(pos_min)
-        list_order.append(i)
-        if size > 0:
-            y_list1 = ndi.gaussian_filter1d(y_list1, size // 2 + 1)
-        y_list = np.max(np.vstack((y_list, y_list1)), axis=0)
-    y_list = y_list / np.max(y_list)
-    return y_list, np.asarray(list_idx), np.asarray(list_order)
-
-
 def match_peaks(measured_peaks, reference_values, step_size, order=2,
-                search_range=5, tol=0.4, size=9, margin=6, scale_range=0.08,
+                search_range=5, tol=0.4, size=15, margin=6, scale_range=0.08,
                 bounds=None, initial_guess=None, return_check=False):
     """
     Match measured peaks to reference values using polynomial fitting
@@ -272,9 +282,9 @@ def match_peaks(measured_peaks, reference_values, step_size, order=2,
     measured_peaks : array_like
         Peak positions (pixel unit).
     reference_values : array_like
-        Reference values such as Q-values or Energies.
+        Reference values such as q-values or energies.
     step_size : float
-        Conversion factor from pixel to physical units (Q or Energy).
+        Conversion factor from pixel to physical units (q or Energy).
     order : int, optional
         Polynomial order used for the transformation.
     search_range : int or tuple, optional
@@ -316,37 +326,50 @@ def match_peaks(measured_peaks, reference_values, step_size, order=2,
                   np.min(reference_values)) - size * margin * step_size
     max_val = max(np.max(measured_values),
                   np.max(reference_values)) + size * margin * step_size
-    meas_gauss_peaks, meas_idx, meas_order = _make_gaussian_peaks(
+    meas_peak_signal, meas_idx, meas_order = make_gaussian_peak_signal(
         measured_values, min_val, max_val, step_size, size=size)
-    ref_gauss_peaks, ref_idx, ref_order = _make_gaussian_peaks(
+    ref_peak_signal, ref_idx, ref_order = make_gaussian_peak_signal(
         reference_values, min_val, max_val, step_size, size=size)
 
+    # import matplotlib.pyplot as plt
+    # plt.plot(meas_peak_signal, color="red")
+    # plt.plot(ref_peak_signal, color="blue")
+    # plt.show()
+
     if initial_guess is None:
-        scale_val, shift_val = _align_peaks_coarse(
-            ref_gauss_peaks, meas_gauss_peaks, start, stop,
+        scale_val, shift_val = estimate_scale_shift(
+            ref_peak_signal, meas_peak_signal, start, stop,
             ratio_start=-scale_range, ratio_stop=scale_range,
             ratio_step=scale_step)
         initial_guess = np.zeros(order + 1)
         initial_guess[-2] = scale_val
         initial_guess[-1] = shift_val
-    poly_facts = _find_scale_shift(ref_gauss_peaks, meas_gauss_peaks,
-                                   initial_guess=initial_guess, bounds=bounds)
-    meas_gauss_peaks_corr = _correct_scale_shift(meas_gauss_peaks, poly_facts)
-    degree = len(poly_facts) - 1
+    poly_coefs = find_polynomial_warp(ref_peak_signal, meas_peak_signal,
+                                      initial_guess=initial_guess,
+                                      bounds=bounds)
+    meas_peak_signal_corr = apply_polynomial_warp(meas_peak_signal,
+                                                  poly_coefs)
+
+    # import matplotlib.pyplot as plt
+    # plt.plot(meas_peak_signal_corr, color="red")
+    # plt.plot(ref_peak_signal, color="blue")
+    # plt.show()
+
+    degree = len(poly_coefs) - 1
     list_peaks_ref = np.int16(np.sum(np.asarray(
         [factor * ref_idx ** (degree - i) for i, factor in
-         enumerate(poly_facts)]), axis=0))
+         enumerate(poly_coefs)]), axis=0))
     selected_peaks = []
     reference_ids = []
     rad = size // 2
-    num_idx = len(meas_gauss_peaks_corr)
+    num_idx = len(meas_peak_signal_corr)
     for i, peak in enumerate(list_peaks_ref):
         pos = ref_idx[i]
         start_idx = pos - rad
         stop_idx = pos + rad + 1
         if 0 <= start_idx < num_idx and 0 <= stop_idx < num_idx:
-            list1 = meas_gauss_peaks_corr[start_idx:stop_idx]
-            list2 = ref_gauss_peaks[start_idx:stop_idx]
+            list1 = meas_peak_signal_corr[start_idx:stop_idx]
+            list2 = ref_peak_signal[start_idx:stop_idx]
             val = np.mean(np.abs(list1 - list2))
             if val < tol:
                 min_pos = np.argmin(np.abs(peak - meas_idx))
@@ -355,11 +378,11 @@ def match_peaks(measured_peaks, reference_values, step_size, order=2,
     selected_peaks = np.asarray(selected_peaks)
     reference_ids = np.asarray(reference_ids)
     if return_check:
-        results = {"x": np.linspace(min_val, max_val, len(meas_gauss_peaks)),
-                   "measured_before": meas_gauss_peaks,
-                   "measured_after": meas_gauss_peaks_corr,
-                   "reference": ref_gauss_peaks,
-                   "poly_factors": poly_facts}
+        results = {"x": np.linspace(min_val, max_val, len(meas_peak_signal)),
+                   "measured_before": meas_peak_signal,
+                   "measured_after": meas_peak_signal_corr,
+                   "reference": ref_peak_signal,
+                   "poly_coefs": poly_coefs}
         return selected_peaks, reference_ids, results
     return selected_peaks, reference_ids
 
@@ -419,7 +442,7 @@ def calibrate_energy_1d(list_data, reference_energies, energy_step,
 
     Returns
     -------
-    list_fact : ndarray
+    poly_coefs : ndarray
         Polynomial coefficients (constant term first, i.e a0+a1*x+a2*x^2 ..)
         for the energy calibration.
     loc_peaks : ndarray, optional
@@ -429,6 +452,8 @@ def calibrate_energy_1d(list_data, reference_energies, energy_step,
         Corresponding reference energies. Returned if `return_check` is True.
     """
     list_data = np.copy(list_data)
+    if list_data.ndim != 1:
+        raise ValueError("Input must be a 1D array!!!")
     npoint = len(list_data)
     min_len = fit_order + 1
     zero_left = np.clip(zero_left, 0, npoint - min_len)
@@ -437,7 +462,7 @@ def calibrate_energy_1d(list_data, reference_energies, energy_step,
     if zero_right == 0:
         zero_right = npoint - 1
     list_data[zero_right:] = 0
-    list_fact = np.zeros(fit_order + 1, dtype=np.float32)
+    poly_coefs = np.zeros(fit_order + 1, dtype=np.float32)
     if match_peaks_para is None:
         raise ValueError("Please provide parameters of the method for "
                          "matching measured peaks and reference peaks!")
@@ -450,9 +475,9 @@ def calibrate_energy_1d(list_data, reference_energies, energy_step,
         nmin, nmax = np.min(list_data), np.max(list_data)
         if nmax == nmin:
             if return_check:
-                return list_fact, loc_peaks, loc_energies
+                return poly_coefs, loc_peaks, loc_energies
             else:
-                return list_fact
+                return poly_coefs
         if smooth_svd_para is not None:
             smooth_svd_para = dict(smooth_svd_para)
             list_data = prep.smooth_filter_based_svd(list_data,
@@ -480,14 +505,14 @@ def calibrate_energy_1d(list_data, reference_energies, energy_step,
                                                energy_step, order=fit_order,
                                                **match_peaks_para)[:2]
         if len(ref_positions) > min_len:
-            list_fact = np.float32(
+            poly_coefs = np.float32(
                 np.polyfit(loc_peaks, reference_energies[ref_positions],
                            fit_order, rcond=1e-64)[::-1])
             loc_energies = reference_energies[ref_positions]
     if return_check:
-        return list_fact, loc_peaks, loc_energies
+        return poly_coefs, loc_peaks, loc_energies
     else:
-        return list_fact
+        return poly_coefs
 
 
 def calibrate_energy_image(image, reference_energies, energy_step,
@@ -567,20 +592,31 @@ def calibrate_energy_image(image, reference_energies, energy_step,
             raise ValueError(f"Length of list of list of peaks, {len(peaks)}, "
                              f"is not the same as the height, {height}, "
                              f"of the image")
-    max_cores = mp.cpu_count()
+    max_cores = cpu_count()
     if ncore is None:
         ncore = max(1, max_cores - 1)
     else:
         ncore = max(1, min(ncore, max_cores))
-    results = Parallel(n_jobs=ncore, prefer=prefer)(
-        delayed(calibrate_energy_1d)(
-            image[idx], reference_energies, energy_step, fit_order,
-            zero_left, zero_right, sigma, smooth_svd_para,
-            get_peaks_para, sub_peaks_para, match_peaks_para, peaks,
-            return_check) for idx in range(height))
+    if ncore > 1:
+        results = Parallel(n_jobs=ncore, prefer=prefer)(
+            delayed(calibrate_energy_1d)(
+                image[idx], reference_energies, energy_step, fit_order,
+                zero_left, zero_right, sigma, smooth_svd_para,
+                get_peaks_para, sub_peaks_para, match_peaks_para, peaks,
+                return_check) for idx in range(height))
+    else:
+        results = []
+        for idx in range(height):
+            res = calibrate_energy_1d(image[idx], reference_energies,
+                                      energy_step, fit_order,
+                                      zero_left, zero_right, sigma,
+                                      smooth_svd_para, get_peaks_para,
+                                      sub_peaks_para, match_peaks_para, peaks,
+                                      return_check)
+            results.append(res)
     if return_check:
-        return (np.asarray(results[:][0]), np.asarray(results[:][1]),
-                np.asarray(results[:][2]))
+        poly_coefs, loc_peaks, loc_energies = zip(*results)
+        return np.asarray(poly_coefs), list(loc_peaks), list(loc_energies)
     else:
         return np.asarray(results)
 
@@ -650,7 +686,7 @@ def calibrate_q_germ_detector_1d(strip_idx, list_data, d_spacing_values,
 
     Returns
     -------
-    list_fact : ndarray
+    poly_coefs : ndarray
         Polynomial coefficients (constant term first) mapping pixel index
         to q-values.
     loc_peaks : ndarray, optional
@@ -660,6 +696,8 @@ def calibrate_q_germ_detector_1d(strip_idx, list_data, d_spacing_values,
         Corresponding reference q-values. Returned if `return_check` is True.
     """
     list_data = np.copy(list_data)
+    if list_data.ndim != 1:
+        raise ValueError("Input must be a 1D array!!!")
     q_values = 2 * np.pi / d_spacing_values
     npoint = len(list_data)
     min_len = fit_order + 1
@@ -669,7 +707,7 @@ def calibrate_q_germ_detector_1d(strip_idx, list_data, d_spacing_values,
     if zero_right == 0:
         zero_right = npoint - 1
     list_data[zero_right:] = 0
-    list_fact = np.zeros(fit_order + 1, dtype=np.float32)
+    poly_coefs = np.zeros(fit_order + 1, dtype=np.float32)
     if match_peaks_para is None:
         raise ValueError("Please provide parameters of the method for "
                          "matching measured peaks and reference peaks!")
@@ -690,9 +728,9 @@ def calibrate_q_germ_detector_1d(strip_idx, list_data, d_spacing_values,
         nmin, nmax = np.min(list_data), np.max(list_data)
         if nmax == nmin:
             if return_check:
-                return list_fact, loc_peaks, loc_q_values
+                return poly_coefs, loc_peaks, loc_q_values
             else:
-                return list_fact
+                return poly_coefs
         if smooth_svd_para is not None:
             smooth_svd_para = dict(smooth_svd_para)
             list_data = prep.smooth_filter_based_svd(list_data,
@@ -720,21 +758,21 @@ def calibrate_q_germ_detector_1d(strip_idx, list_data, d_spacing_values,
                                                energy_step, order=fit_order,
                                                **match_peaks_para)[:2]
         if len(ref_positions) > min_len:
-            list_fact = np.float32(
+            poly_coefs = np.float32(
                 np.polyfit(np.float64(loc_peaks),
                            np.float64(q_values[ref_positions]),
                            fit_order, rcond=1e-64)[::-1])
             loc_q_values = q_values[ref_positions]
     if return_check:
-        return list_fact, loc_peaks, loc_q_values
+        return poly_coefs, loc_peaks, loc_q_values
     else:
-        return list_fact
+        return poly_coefs
 
 
-def calibrate_q_germ_detector_image(image, d_spacing_values,
-                                    two_theta, energy_step, energy_guess=None,
-                                    fit_order=2, zero_left=0,
-                                    zero_right=-1, sigma=0,
+def calibrate_q_germ_detector_image(image, d_spacing_values, two_theta,
+                                    energy_step, strip_start=0,
+                                    energy_guess=None, fit_order=2,
+                                    zero_left=0, zero_right=-1, sigma=0,
                                     smooth_svd_para={"rank": 5,
                                                      "lambda_threshold": 0.5},
                                     get_peaks_para={"width": 15, "ratio": 0.1,
@@ -768,6 +806,8 @@ def calibrate_q_germ_detector_image(image, d_spacing_values,
         Scattering angle (2θ, in degree) of the detector.
     energy_step : float
         Energy step per pixel used for peak matching.
+    strip_start : int, optional
+        Detector strip index corresponding to the first row of the image.
     energy_guess : array_like or None, optional
         Initial energy estimates corresponding to `d_spacing_values`.
         If None, energies are estimated from detector geometry for each strip.
@@ -808,7 +848,7 @@ def calibrate_q_germ_detector_image(image, d_spacing_values,
 
     Returns
     -------
-    list_fact : ndarray
+    poly_coefs : ndarray
         Array of polynomial coefficients for each detector strip, with shape
         (n_strips, fit_order + 1). Coefficients are ordered with the constant
         term first.
@@ -825,20 +865,36 @@ def calibrate_q_germ_detector_image(image, d_spacing_values,
             raise ValueError(f"Length of list of list of peaks, {len(peaks)}, "
                              f"is not the same as the height, {height}, "
                              f"of the image")
-    max_cores = mp.cpu_count()
+    max_cores = cpu_count()
     if ncore is None:
         ncore = max(1, max_cores - 1)
     else:
         ncore = max(1, min(ncore, max_cores))
-    results = Parallel(n_jobs=ncore, prefer=prefer)(
-        delayed(calibrate_q_germ_detector_1d)(
-            idx, image[idx], d_spacing_values, two_theta, energy_step,
-            energy_guess, fit_order, zero_left, zero_right, sigma,
-            smooth_svd_para, get_peaks_para, sub_peaks_para, match_peaks_para,
-            peaks, return_check) for idx in range(height))
+    strip_start = int(strip_start)
+    strip_ids = np.int32(np.arange(height) + strip_start)
+    if ncore > 1:
+        results = Parallel(n_jobs=ncore, prefer=prefer)(
+            delayed(calibrate_q_germ_detector_1d)(
+                idx, image[idx - strip_start], d_spacing_values, two_theta,
+                energy_step, energy_guess, fit_order, zero_left, zero_right, sigma,
+                smooth_svd_para, get_peaks_para, sub_peaks_para, match_peaks_para,
+                peaks, return_check) for idx in strip_ids)
+    else:
+        results = []
+        for idx in range(height):
+            res = calibrate_q_germ_detector_1d(idx, image[idx - strip_start],
+                                               d_spacing_values, two_theta,
+                                               energy_step, energy_guess,
+                                               fit_order, zero_left,
+                                               zero_right, sigma,
+                                               smooth_svd_para, get_peaks_para,
+                                               sub_peaks_para,
+                                               match_peaks_para, peaks,
+                                               return_check)
+            results.append(res)
     if return_check:
-        return (np.asarray(results[:][0]), np.asarray(results[:][1]),
-                np.asarray(results[:][2]))
+        poly_coefs, loc_peaks, loc_q_values = zip(*results)
+        return np.asarray(poly_coefs), list(loc_peaks), list(loc_q_values)
     else:
         return np.asarray(results)
 
@@ -897,7 +953,7 @@ def calibrate_q_1d(list_data, q_reference, q_step, fit_order=2, zero_left=0,
 
     Returns
     -------
-    list_fact : ndarray
+    poly_coefs : ndarray
         Polynomial coefficients (constant term first) mapping pixel index
         to q-values.
     loc_peaks : ndarray, optional
@@ -915,7 +971,7 @@ def calibrate_q_1d(list_data, q_reference, q_step, fit_order=2, zero_left=0,
     if zero_right == 0:
         zero_right = npoint - 1
     list_data[zero_right:] = 0
-    list_fact = np.zeros(fit_order + 1, dtype=np.float32)
+    poly_coefs = np.zeros(fit_order + 1, dtype=np.float32)
     if match_peaks_para is None:
         raise ValueError("Please provide parameters of the method for "
                          "matching measured peaks and reference peaks!")
@@ -928,9 +984,9 @@ def calibrate_q_1d(list_data, q_reference, q_step, fit_order=2, zero_left=0,
         nmin, nmax = np.min(list_data), np.max(list_data)
         if nmax == nmin:
             if return_check:
-                return list_fact, loc_peaks, loc_q_values
+                return poly_coefs, loc_peaks, loc_q_values
             else:
-                return list_fact
+                return poly_coefs
         if smooth_svd_para is not None:
             smooth_svd_para = dict(smooth_svd_para)
             list_data = prep.smooth_filter_based_svd(list_data,
@@ -958,15 +1014,15 @@ def calibrate_q_1d(list_data, q_reference, q_step, fit_order=2, zero_left=0,
                                                q_step, order=fit_order,
                                                **match_peaks_para)[:2]
         if len(ref_positions) > min_len:
-            list_fact = np.float32(
+            poly_coefs = np.float32(
                 np.polyfit(np.float64(loc_peaks),
                            np.float64(q_reference[ref_positions]),
                            fit_order, rcond=1e-64)[::-1])
             loc_q_values = q_reference[ref_positions]
     if return_check:
-        return list_fact, loc_peaks, loc_q_values
+        return poly_coefs, loc_peaks, loc_q_values
     else:
-        return list_fact
+        return poly_coefs
 
 
 def calibrate_q_image(image, q_reference, q_step, fit_order=2, zero_left=0,
@@ -1038,7 +1094,7 @@ def calibrate_q_image(image, q_reference, q_step, fit_order=2, zero_left=0,
 
     Returns
     -------
-    list_fact : ndarray
+    poly_coefs : ndarray
         Array of polynomial coefficients for each image row, with shape
         (n_rows, fit_order + 1). Coefficients are ordered with the constant
         term first.
@@ -1062,19 +1118,29 @@ def calibrate_q_image(image, q_reference, q_step, fit_order=2, zero_left=0,
             raise ValueError(f"Length of list of list of peaks, {len(peaks)}, "
                              f"is not the same as the height, {height}, "
                              f"of the image")
-    max_cores = mp.cpu_count()
+    max_cores = cpu_count()
     if ncore is None:
         ncore = max(1, max_cores - 1)
     else:
         ncore = max(1, min(ncore, max_cores))
-    results = Parallel(n_jobs=ncore, prefer=prefer)(
-        delayed(calibrate_q_1d)(
-            image[idx], q_reference, q_step[idx], fit_order, zero_left,
-            zero_right, sigma, smooth_svd_para, get_peaks_para,
-            sub_peaks_para, match_peaks_para, peaks,
-            return_check) for idx in range(height))
+    if ncore > 1:
+        results = Parallel(n_jobs=ncore, prefer=prefer)(
+            delayed(calibrate_q_1d)(
+                image[idx], q_reference, q_step[idx], fit_order, zero_left,
+                zero_right, sigma, smooth_svd_para, get_peaks_para,
+                sub_peaks_para, match_peaks_para, peaks,
+                return_check) for idx in range(height))
+    else:
+        results = []
+        for idx in range(height):
+            res = calibrate_q_1d(image[idx], q_reference, q_step[idx],
+                                 fit_order, zero_left, zero_right, sigma,
+                                 smooth_svd_para, get_peaks_para,
+                                 sub_peaks_para, match_peaks_para, peaks,
+                                 return_check)
+            results.append(res)
     if return_check:
-        return (np.asarray(results[:][0]), np.asarray(results[:][1]),
-                np.asarray(results[:][2]))
+        poly_coefs, loc_peaks, loc_q_values = zip(*results)
+        return np.asarray(poly_coefs), list(loc_peaks), list(loc_q_values)
     else:
         return np.asarray(results)

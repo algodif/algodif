@@ -32,7 +32,6 @@ Module of methods in the preprocessing stage:
 
 
 import warnings
-import multiprocessing as mp
 import numpy as np
 import scipy.ndimage as ndi
 import scipy.signal as sig
@@ -42,14 +41,14 @@ from scipy.linalg import cholesky
 from scipy.sparse.linalg import spsolve
 from scipy.stats import skewnorm
 from scipy.optimize import minimize_scalar
-from joblib import Parallel, delayed
+from joblib import Parallel, delayed, cpu_count
 import matplotlib.pyplot as plt
 
 
 def remove_background_based_als(list_data, ld=1e6, weight=0.05, num_iter=10):
     """
     Remove the baseline, i.e. background, using Asymmetric Least Squares (ALS)
-    smoothing (Ref. [1]).
+    smoothing (Ref. [1,2]).
 
     Parameters
     ----------
@@ -70,6 +69,7 @@ def remove_background_based_als(list_data, ld=1e6, weight=0.05, num_iter=10):
     References
     ----------
     [1] : https://doi.org/10.1021/ac051370e
+    [2] : https://irfpy.irf.se/projects/ica/_modules/irfpy/ica/baseline.html
     """
     if list_data.ndim != 1:
         raise ValueError("Input must be a 1D array!!!")
@@ -89,7 +89,7 @@ def remove_background_based_als(list_data, ld=1e6, weight=0.05, num_iter=10):
 def remove_background_based_arpls(list_data, ld=1e5, weight=0.05, num_iter=10):
     """
     Remove the baseline using Asymmetrically Reweighted Penalized Least Squares
-    (arPLS) smoothing (Ref. [1]).
+    (arPLS) smoothing (Ref. [1,2]).
 
     Parameters
     ----------
@@ -110,6 +110,7 @@ def remove_background_based_arpls(list_data, ld=1e5, weight=0.05, num_iter=10):
     References
     ----------
     [1] : https://doi.org/10.1039/C4AN01061B
+    [2] : https://irfpy.irf.se/projects/ica/_modules/irfpy/ica/baseline.html
     """
     if list_data.ndim != 1:
         raise ValueError("Input must be a 1D array!!!")
@@ -147,7 +148,7 @@ def remove_image_background_based_als(image, axis=0, ld=1e6, weight=0.05,
                                       prefer="processes"):
     """
     Apply 1D background removal method, Asymmetric Least Squares (ALS)
-    (Ref. [1]), along an axis of an image.
+    (Ref. [1, 2]), along an axis of an image.
 
     Parameters
     ----------
@@ -175,18 +176,24 @@ def remove_image_background_based_als(image, axis=0, ld=1e6, weight=0.05,
     References
     ----------
     [1] : https://doi.org/10.1021/ac051370e
+    [2] : https://irfpy.irf.se/projects/ica/_modules/irfpy/ica/baseline.html
     """
 
-    max_cores = mp.cpu_count()
+    max_cores = cpu_count()
     if ncore is None:
         ncore = max(1, max_cores - 1)
     else:
         ncore = max(1, min(ncore, max_cores))
-    if axis != 0 and axis != 1:
+    if axis not in (0, 1):
         raise ValueError("Only 2 options: 0 or 1")
+    if prefer not in ("threads", "processes"):
+        raise ValueError("Prefer must be 'threads' or 'processes'")
+    image = np.asarray(image)
+    if image.ndim != 2:
+        raise ValueError("Input image must be a 2D array")
     if axis == 1:
         image = np.transpose(image)
-    (height, width) = image.shape
+    height = image.shape[0]
     max_val = np.max(image)
     if max_val == 0.0:
         raise ValueError("Check input data. Maximum value is zero!!!")
@@ -205,7 +212,7 @@ def remove_image_background_based_arpls(image, axis=0, ld=1e6, weight=0.05,
                                         prefer="processes"):
     """
     Apply 1D background removal method, Asymmetrically Reweighted Penalized
-    Least Squares (arPLS) (Ref. [1]), along an axis of an image.
+    Least Squares (arPLS) (Ref. [1,2 ]), along an axis of an image.
 
     Parameters
     ----------
@@ -233,17 +240,23 @@ def remove_image_background_based_arpls(image, axis=0, ld=1e6, weight=0.05,
     References
     ----------
     [1] : https://doi.org/10.1039/C4AN01061B
+    [2] : https://irfpy.irf.se/projects/ica/_modules/irfpy/ica/baseline.html
     """
-    max_cores = mp.cpu_count()
+    max_cores = cpu_count()
     if ncore is None:
         ncore = max(1, max_cores - 1)
     else:
         ncore = max(1, min(ncore, max_cores))
-    if axis != 0 and axis != 1:
+    if axis not in (0, 1):
         raise ValueError("Only 2 options: 0 or 1")
+    if prefer not in ("threads", "processes"):
+        raise ValueError("Prefer must be 'threads' or 'processes'")
+    image = np.asarray(image)
+    if image.ndim != 2:
+        raise ValueError("Input image must be a 2D array")
     if axis == 1:
         image = np.transpose(image)
-    (height, width) = image.shape
+    height = image.shape[0]
     max_val = np.max(image)
     if max_val == 0.0:
         raise ValueError("Check input data. Maximum value is zero!!!")
@@ -279,12 +292,15 @@ def get_peaks(list_data, width=15, sigma=0, norm=True, threshold=0.05):
     array_like
         Indices of detected peaks.
     """
+    list_data = np.asarray(list_data)
     if list_data.ndim != 1:
         raise ValueError("Input must be a 1D array!!!")
     if sigma > 0:
         list_data = ndi.gaussian_filter1d(list_data, sigma)
     if norm:
-        list_data = list_data / np.max(list_data)
+        max = np.max(list_data)
+        if max != 0.0:
+            list_data = list_data / max
     peaks = sig.find_peaks(list_data, width=width, prominence=threshold)[0]
     return peaks
 
@@ -717,16 +733,21 @@ def smooth_image_based_svd(image, axis=0, lambda_threshold=0.5, rank=5,
     np.ndarray
         The smoothed signal, scaled to the original amplitude.
     """
-    max_cores = mp.cpu_count()
+    max_cores = cpu_count()
     if ncore is None:
         ncore = max(1, max_cores - 1)
     else:
         ncore = max(1, min(ncore, max_cores))
-    if axis != 0 and axis != 1:
+    if axis not in (0, 1):
         raise ValueError("Only 2 options: 0 or 1")
+    if prefer not in ("threads", "processes"):
+        raise ValueError("Prefer must be 'threads' or 'processes'")
+    image = np.asarray(image)
+    if image.ndim != 2:
+        raise ValueError("Input image must be a 2D array")
     if axis == 1:
         image = np.transpose(image)
-    (height, width) = image.shape
+    height = image.shape[0]
     img_corr = Parallel(n_jobs=ncore, prefer=prefer)(delayed(
         smooth_filter_based_svd)(image[idx], lambda_threshold, rank) for idx in
                                                      range(height))
@@ -759,6 +780,9 @@ def locate_peaks_by_ranked_descent(list_data, sigma=0):
     [1] Algorithms and software tools for energy-dispersive X-ray diffraction
         tomography, Nghia T. Vo et al.
     """
+    list_data = np.asarray(list_data)
+    if list_data.ndim != 1:
+        raise ValueError("Input must be a 1D array!!!")
     if sigma > 0:
         list_data = ndi.gaussian_filter1d(list_data, sigma)
     indices = np.argsort(list_data)[::-1]
@@ -835,6 +859,9 @@ def get_peaks_by_ranked_descent(list_data, width=15, ratio=0.1, sigma=2,
         tomography, Nghia T. Vo et al.
     """
 
+    list_data = np.asarray(list_data)
+    if list_data.ndim != 1:
+        raise ValueError("Input must be a 1D array!!!")
     if sigma > 0:
         list_data = ndi.gaussian_filter1d(list_data, sigma)
     list_data = list_data - np.min(list_data)
@@ -968,7 +995,7 @@ def remove_image_background_ranked_descent(image, axis=0, width=15,
     [1] Algorithms and software tools for energy-dispersive X-ray
         diffraction tomography, Nghia T. Vo et al.
     """
-    max_cores = mp.cpu_count()
+    max_cores = cpu_count()
     if ncore is None:
         ncore = max(1, max_cores - 1)
     else:
@@ -982,7 +1009,6 @@ def remove_image_background_ranked_descent(image, axis=0, width=15,
         raise ValueError("Input image must be a 2D array")
     if axis == 1:
         image = np.transpose(image)
-
     height = image.shape[0]
     if ncore > 1:
         img_corr = Parallel(n_jobs=ncore, prefer=prefer)(delayed(

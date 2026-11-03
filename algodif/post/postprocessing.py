@@ -35,9 +35,8 @@ Core functionalities include:
 """
 
 
-import multiprocessing as mp
 import numpy as np
-from joblib import Parallel, delayed
+from joblib import Parallel, delayed, cpu_count
 
 
 def correct_energy_1d(list_data, list_coef, energy_step):
@@ -111,7 +110,7 @@ def correct_energy_image(image, mat_coef, energy_step, ncore=None,
                          f"value {height}")
     x_list = np.arange(width)
     list_energy = x_list * energy_step
-    max_cores = mp.cpu_count()
+    max_cores = cpu_count()
     if ncore is None:
         ncore = max(1, max_cores - 1)
     else:
@@ -205,43 +204,6 @@ def correct_q_1d(list_data, list_coef, q_step):
     return list_correct
 
 
-def get_q_map(height, width, mat_coef):
-    """
-    Generate a 2D q-map from per-row polynomial calibration coefficients.
-
-    The q-map provides the q-value corresponding to each pixel position
-    in a detector image, based on row-dependent calibration coefficients.
-
-    Parameters
-    ----------
-    height : int
-        Number of rows in the detector image.
-    width : int
-        Number of pixels per row.
-    mat_coef : array_like
-        2D array of polynomial calibration coefficients with shape
-        (height, n_coef). Each row corresponds to one detector row.
-
-    Returns
-    -------
-    ndarray
-        2D array of shape (height, width) containing q-values for each
-        pixel position.
-    """
-    if len(mat_coef) != height:
-        raise ValueError(f"Row number of the calibration coefficients: "
-                         f" {len(mat_coef)} is not the same as the height "
-                         f"value {height}")
-    q_map = np.zeros((height, width))
-    x_list = np.arange(width)
-    for ii in range(height):
-        list_coef = mat_coef[ii]
-        q_map[ii] = np.sum(np.asarray(
-            [factor * x_list ** i for i, factor in enumerate(list_coef)]),
-            axis=0)
-    return q_map
-
-
 def correct_q_image(image, mat_coef, q_step, ncore=1, prefer="processes"):
     """
     Apply a scattering vector (q) correction to a 2D image row-by-row.
@@ -279,7 +241,7 @@ def correct_q_image(image, mat_coef, q_step, ncore=1, prefer="processes"):
                          f"value {height}")
     x_list = np.arange(width)
     q_list = np.arange(width) * q_step
-    max_cores = mp.cpu_count()
+    max_cores = cpu_count()
     if ncore is None:
         ncore = max(1, max_cores - 1)
     else:
@@ -302,3 +264,40 @@ def correct_q_image(image, mat_coef, q_step, ncore=1, prefer="processes"):
                               q_list) for ii in range(height))
         mat_correct = np.asarray(results)
     return mat_correct
+
+
+def get_q_map(height, width, mat_coef):
+    """
+    Generate a 2D q-map from per-row polynomial calibration coefficients.
+
+    The q-map provides the q-value corresponding to each pixel position
+    in a detector image, based on row-dependent calibration coefficients.
+
+    Parameters
+    ----------
+    height : int
+        Number of rows in the detector image.
+    width : int
+        Number of pixels per row.
+    mat_coef : array_like
+        2D array of polynomial calibration coefficients with shape
+        (height, n_coef). Each row corresponds to one detector row.
+
+    Returns
+    -------
+    ndarray
+        2D array of shape (height, width) containing q-values for each
+        pixel position.
+    """
+    if len(mat_coef) != height:
+        raise ValueError(f"Row number of the calibration coefficients: "
+                         f" {len(mat_coef)} is not the same as the height "
+                         f"value {height}")
+    q_map = np.zeros((height, width))
+    x_list = np.arange(width)
+    for ii in range(height):
+        list_coef = mat_coef[ii]
+        q_map[ii] = np.sum(np.asarray(
+            [factor * x_list ** i for i, factor in enumerate(list_coef)]),
+            axis=0)
+    return q_map

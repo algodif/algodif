@@ -156,9 +156,11 @@ results = proc.calibrate_q_germ_detector_image(image, d_spacing_values,
                                                                  "search_range": (-10, 10),
                                                                  "bounds": None,
                                                                  "initial_guess": None},
-                                               return_check=False, ncore=None,
+                                               return_check=False, ncore=16,
                                                prefer="processes")
 losa.save_csv(output_base + "/calibration_coefs.csv", results)
+t1 = time.time()
+print(f"Time cost calibration:  {t1 - t0}")
 
 t0 = time.time()
 mat_correct = post.correct_q_image(image, results, q_step, ncore=None)

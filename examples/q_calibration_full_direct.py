@@ -32,7 +32,7 @@ q_step = np.max(np.asarray(q_step_list))
 print("Q-step ", q_step)
 list_d_intensity_ref = losa.load_d_spacing_from_pearson_crystal_data_file(
     r"C:\Users\nvo\PycharmProjects\algodif\data\Pearson_Crystal_Data_Cr2O3.csv",
-    threshold=35, num_use=12, check=True)
+    threshold=25, num_use=21, check=True)
 
 
 plt.figure(figsize=fig_size)
@@ -141,12 +141,14 @@ results = proc.calibrate_q_image(image, q_values_ref, q_step_list,
                                  match_peaks_para={"tol": 0.4,
                                                    "size": 21,
                                                    "margin": 20,
-                                                   "search_range": (-0.9, 0.9),
+                                                   "search_range": (-0.5, 0.5),
                                                    "bounds": None,
                                                    "initial_guess": None},
                                  return_check=False, ncore=None,
                                  prefer="processes")
 
+t1 = time.time()
+print(f"Time cost calibration:  {t1 - t0}")
 mat_correct = post.correct_q_image(image, results, q_step)
 
 fig, axes = plt.subplots(1, 2, figsize=(16, 8))

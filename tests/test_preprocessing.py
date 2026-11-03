@@ -1,37 +1,10 @@
-# ============================================================================
-# ============================================================================
-# Copyright (c) 2026 Nghia T. Vo. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ============================================================================
-# Author: Nghia T. Vo
-# E-mail:
-# ============================================================================
-# Contributors:
-# ============================================================================
-
 """
 Tests for methods in preprocessing.py
 """
 
 import unittest
 import numpy as np
-import matplotlib
-import sys
-
-# matplotlib.use("Agg")
 import algodif.prep.preprocessing as prep
-import matplotlib.pyplot as plt
 
 
 def make_gaussian(x, center, sigma, amplitude=1.0):
@@ -323,3 +296,45 @@ class PreprocessingMethods(unittest.TestCase):
 
         self.assertRaises(ValueError, prep.get_peaks_by_ranked_descent,
                           np.arange(4, dtype=np.float64))
+
+    def test_remove_background_ranked_descent(self):
+        data = self.peaks_clean + 0.1
+        corrected = prep.remove_background_ranked_descent(data)
+        self.assertEqual(corrected.shape, data.shape)
+        self.assertTrue(np.all(corrected >= 0.0))
+
+        heights = [1.0, 0.6, 0.8]
+        self.assertTrue(np.allclose(corrected[self.centers], heights,
+                                    atol=0.05))
+        self.assertTrue(np.all(corrected[[10, 75, 125, 190]] < 0.05))
+        self.assertTrue(np.array_equal(data, self.peaks_clean + 0.1))
+
+        corrected = prep.remove_background_ranked_descent(
+            np.arange(50, dtype=np.float64), sigma=0)
+        self.assertTrue(np.allclose(corrected, 0.0))
+
+    def test_remove_image_background_ranked_descent(self):
+        data = self.peaks_clean + 0.1
+        image = np.tile(data, (6, 1))
+        expected = np.tile(prep.remove_background_ranked_descent(data),
+                           (6, 1))
+
+        corrected = prep.remove_image_background_ranked_descent(
+            image, axis=0, ncore=1)
+        self.assertEqual(corrected.shape, image.shape)
+        self.assertTrue(np.allclose(corrected, expected))
+
+        corrected = prep.remove_image_background_ranked_descent(
+            image, axis=0, ncore=2, prefer="threads")
+        self.assertTrue(np.allclose(corrected, expected))
+
+        corrected_t = prep.remove_image_background_ranked_descent(
+            image.T, axis=1, ncore=1)
+        self.assertEqual(corrected_t.shape, image.T.shape)
+        self.assertTrue(np.allclose(corrected_t, expected.T))
+
+        self.assertRaises(ValueError,
+                          prep.remove_image_background_ranked_descent,
+                          image, axis=2)
+        self.assertRaises(ValueError,
+                          prep.remove_image_background_ranked_descent, data)

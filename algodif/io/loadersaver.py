@@ -27,7 +27,6 @@ Module for I/O tasks:
     -   Get file names, make file/folder name.
 """
 
-import os
 import csv
 import json
 import platform
@@ -955,7 +954,6 @@ def save_image_plt(file_path, mat, x_label="X", y_label="Y", x_max=None,
     if y_max is None:
         y_max = height
     make_folder(file_path)
-
     with matplotlib.rc_context({"font.weight": font_weight,
                                 "font.size": text_size}):
         fig = Figure(dpi=dpi, figsize=figsize)
@@ -1032,7 +1030,6 @@ def save_plot(file_path, y_list, x_list=None, x_lim=None, y_lim=None,
     """
     file_path = __get_path(file_path, check_exist=False)
     make_folder(file_path)
-
     fig = Figure(figsize=figsize, dpi=dpi)
     FigureCanvasAgg(fig)
     ax = fig.add_subplot(111)

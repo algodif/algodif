@@ -1,19 +1,32 @@
 # Algodif
 ### Data processing (**ALGO**)rithms for (**DIF**)fraction-based X-ray techniques 
 
-Methods and software for calibrating multi-element germanium energy-dispersive X-ray detectors, 
-as well as for processing and visualizing data acquired using energy-dispersive X-ray 
-diffraction tomography (EDDT) at hard X-ray synchrotron beamlines.  A detailed description 
-is provided in our submitted paper: "Algorithms and Software Tools for Energy-Dispersive X-ray Diffraction Tomography,"  
-Nghia T. Vo, Zhong Zhong, and Michael Drakopoulos.
+Methods and software for calibrating multi-element energy-dispersive X-ray (EDX) detectors,
+processing and visualizing energy-dispersive X-ray diffraction tomography (EDDT) data acquired 
+at a hard X-ray synchrotron beamline.
+
+A detailed description  is provided in the under reviewed paper: "Algorithms and software tools for 
+energy-dispersive X-ray diffraction tomography," Nghia T. Vo, Zhong Zhong, and Michael Drakopoulos. 
+
+The core of this work is to address a problem: 
+given a list of measured data points not knowing unit, how to map that into a list of reference points 
+knowing unit. The challenge is that the number of measured data points is not the same as the number of 
+reference points, so there are many local minima in the mapping transformation.
+For X-ray diffraction techniques, it addresses the problem of how to calibrate an instrument using 
+the diffraction pattern or fluorescence spectrum of a known calibrant in a robust and automated fashion.
+
+Although the work was initially aimed at calibrating the HEX beamline instrument (the GeRM detector), 
+the methods and software can be applied to other instruments given standard diffraction patterns or spectra. 
+The specific GeRM geometry is helpful for determining initial guesses of optimizing methods. 
+However, the algorithms in the software are not restricted to the GeRM detector.
 
 Features
 ========
 - Methods for peak detection and sub-pixel location.
 - Methods for matching measured peaks to reference peaks
-- Methods for energy calibration of the GeRM detector.
-- Methods for Q-calibration of the GeRM detector.
-- GUIs/CLIs for processing and visualizing EDDT data. 
+- Methods for energy calibration of an EDX detector.
+- Methods for q-calibration of an EDX detector and the GeRM detector.
+- GUIs/CLIs for processing and visualizing EDDT data from the GeRM detector. 
 
 Introduction
 ============
