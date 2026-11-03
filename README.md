@@ -36,7 +36,7 @@ detector group and combined with a pinhole geometry at the HEX beamline, NSLS-II
 enables both spatial cross-sectional imaging of samples and detailed mapping of their 
 crystal structures. This powerful technique has been routinely used at the beamline since 2023.
 
-![img](./figs/edxd_geometry.png)
+![img](https://github.com/algodif/algodif/raw/main/figs/edxd_geometry.png)
 
 As illustrated, each detector element captures diffraction signals from a specific 
 region of the sample, known as the gauge volume. The multi-strip detector array 
@@ -49,7 +49,7 @@ the sample. This is why the technique is called energy-dispersive X-ray diffract
 tomography (EDDT): it enables direct tomographic imaging without computing 
 required in conventional tomography. 
 
-![img](./figs/eddt_technique.png)
+![img](https://github.com/algodif/algodif/raw/main/figs/eddt_technique.png)
 
 Calibration
 ===========
@@ -70,8 +70,8 @@ of Sn, Pb, and Au to cover a wide energy range from low to high. A small amount 
 included to extend the calibration range beyond 110 keV. The results before and after energy 
 calibration are shown below.
 
-![img](./figs/energy_calib_before.png)
-![img](./figs/energy_calib_after.png)
+![img](https://github.com/algodif/algodif/raw/main/figs/energy_calib_before.png)
+![img](https://github.com/algodif/algodif/raw/main/figs/energy_calib_after.png)
 
 Q calibration
 -------------
@@ -84,8 +84,8 @@ We tested several calibrants, including CeO2, Al2O3, Si, and LaB6, and found tha
 is the best choice for minimizing fluorescence. The tilt of the diffraction lines across 
 the detector strips reflects the variation in scattering angle across the detector.
 
-![img](./figs/q_calib_before.png)
-![img](./figs/q_calib_after.png)
+![img](https://github.com/algodif/algodif/raw/main/figs/q_calib_before.png)
+![img](https://github.com/algodif/algodif/raw/main/figs/q_calib_after.png)
 
 The robustness and reliability of this routine depend critically on the peak detection 
 and peak matching methods, which we have developed and refined over time. Details of these 
@@ -99,11 +99,11 @@ everything into a single GUI may seem appealing, we chose a modular approach to 
 maintenance and accommodate the diverse needs of beamline operations. These tools (Python scripts) 
 can be organized and launched through the [script-runner GUI](https://pypi.org/project/scriptrunner-gui/). 
 
-![img](./figs/eddt_gui.png)
+![img](https://github.com/algodif/algodif/raw/main/figs/eddt_gui.png)
 
-![multi_lines_viewer](./GUIs_CLIs/figs/fig5_multi_lines_viewer.png)
+![multi_lines_viewer](https://github.com/algodif/algodif/raw/main/GUIs_CLIs/figs/fig5_multi_lines_viewer.png)
 
-![4d_viewer](./GUIs_CLIs/figs/fig8_4d_rendering.png)
+![4d_viewer](https://github.com/algodif/algodif/raw/main/GUIs_CLIs/figs/fig8_4d_rendering.png)
 
 Author
 ------

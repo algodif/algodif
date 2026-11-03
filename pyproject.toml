@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "algodif"
+version = "1.0.0"
+description = "Data processing algorithms for diffraction-based X-ray techniques"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Nghia Vo", email = "nvo@bnl.gov" }]
+requires-python = ">=3.10"
+keywords = [
+    "Energy-dispersive X-ray diffraction",
+    "EDX detector calibration",
+    "Energy calibration",
+    "q-calibration",
+    "Peak detection",
+    "Peak matching",
+    "Tomography",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Natural Language :: English",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+    "numpy",
+    "scipy",
+    "h5py",
+    "pillow",
+    "matplotlib",
+    "joblib",
+    "xraydb",
+]
+
+[project.optional-dependencies]
+gui = ["pyvista", "pyvistaqt", "pyside6"]
+docs = ["sphinx>=2", "sphinx_rtd_theme", "sphinxcontrib-bibtex"]
+
+[project.urls]
+Homepage = "https://github.com/algodif/algodif"
+Documentation = "https://algodif.readthedocs.io"
+Source = "https://github.com/algodif/algodif"
+
+[tool.setuptools.packages.find]
+include = ["algodif", "algodif.*"]

@@ -1,0 +1,54 @@
+{% set name = "algodif" %}
+{% set version = "1.0.0" %}
+
+package:
+  name: {{ name|lower }}
+  version: {{ version }}
+
+source:
+  path: ../
+
+build:
+  number: 0
+  noarch: python
+  script: {{ PYTHON }} -m pip install . --no-deps --no-build-isolation -vv
+
+requirements:
+  host:
+    - python >=3.10
+    - pip
+    - setuptools >=77
+    - wheel
+  run:
+    - python >=3.10
+    - numpy
+    - scipy
+    - h5py
+    - pillow
+    - matplotlib
+    - joblib
+    - xraydb
+
+test:
+  imports:
+    - algodif
+    - algodif.io.loadersaver
+    - algodif.prep.preprocessing
+    - algodif.proc.processing
+    - algodif.post.postprocessing
+    - algodif.util.utility
+  source_files:
+    - ./tests/
+  commands:
+    - python -m unittest discover -s tests -v
+
+about:
+  home: https://github.com/algodif/algodif
+  license: Apache-2.0
+  license_file: LICENSE
+  summary: 'Data processing algorithms for diffraction-based X-ray techniques'
+  description: |
+    Methods and software for calibrating multi-element energy-dispersive
+    X-ray (EDX) detectors.
+  doc_url: https://algodif.readthedocs.io
+  dev_url: https://github.com/algodif/algodif
