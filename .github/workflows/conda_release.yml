@@ -24,7 +24,7 @@ jobs:
           python-version: "3.11"
           channels: conda-forge
           channel-priority: strict
-          activate-environment: ""
+          activate-environment: conda-build
 
       - name: Install Conda Build Tools
         run: conda install -y conda-build anaconda-client
