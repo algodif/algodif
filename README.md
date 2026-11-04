@@ -49,7 +49,10 @@ cd algodif
 pip install .
 ```
 
-Documentation: https://algodif.readthedocs.io
+Documentation and usage
+=======================
+   - https://algodif.readthedocs.io
+   - Examples:  https://github.com/algodif/algodif/tree/main/examples
 
 Introduction
 ============
