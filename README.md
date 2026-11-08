@@ -38,7 +38,7 @@ pip install algodif
 ```
 
 ```commandline
-conda install -c algotom -c conda-forge algodif
+conda install -c conda-forge algodif
 ```
 
 or from source:
@@ -122,7 +122,7 @@ User interface software
 
 We provide separate GUIs for different workflows and visualization tasks. Although combining 
 everything into a single GUI may seem appealing, we chose a modular approach to simplify 
-maintenance and accommodate the diverse needs of beamline operations. These tools (Python scripts) 
+maintenance and accommodate the diverse needs of beamline operations. These tools ([Python scripts](https://github.com/algodif/algodif/tree/main/GUIs_CLIs)) 
 can be organized and launched through the [script-runner GUI](https://pypi.org/project/scriptrunner-gui/). 
 
 ![img](https://github.com/algodif/algodif/raw/main/figs/eddt_gui.png)
