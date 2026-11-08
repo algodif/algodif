@@ -60,7 +60,7 @@ class ProcessingMethods(unittest.TestCase):
                                                      width=5)
         ref_peaks_sub = prep.locate_gaussian_peaks_subpixel(
             cls.theory_spectrum[:, 1], ref_peaks, radius=2, sigma=1,
-            skew_fit=False, show=False)
+            skew_fit=False)
         cls.ref_energies = ref_peaks_sub * cls.energy_step
         cls.ref_spectrum = cls.theory_spectrum[:, 1]
         cls.mod_spectrum1 = resample_data(cls.ref_spectrum,

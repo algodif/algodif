@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "algodif"
-version = "1.0.0"
+version = "1.1.0"
 description = "Data processing algorithms for diffraction-based X-ray techniques"
 readme = "README.md"
 license = "Apache-2.0"
@@ -32,13 +32,12 @@ dependencies = [
     "scipy",
     "h5py",
     "pillow",
-    "matplotlib",
     "joblib",
     "xraydb",
 ]
 
 [project.optional-dependencies]
-gui = ["pyvista", "pyvistaqt", "pyside6"]
+gui = ["matplotlib", "pyvista", "pyvistaqt", "pyside6"]
 docs = ["sphinx>=2", "sphinx_rtd_theme", "sphinxcontrib-bibtex"]
 
 [project.urls]

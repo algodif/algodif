@@ -41,7 +41,6 @@ from scipy.sparse.linalg import spsolve
 from scipy.stats import skewnorm
 from scipy.optimize import minimize_scalar
 from joblib import Parallel, delayed, cpu_count
-import matplotlib.pyplot as plt
 
 
 def remove_background_based_als(list_data, ld=1e6, weight=0.05, num_iter=10):
@@ -479,8 +478,7 @@ def fit_skewed_gaussian_peak(list_data, sigma=0, return_para=False):
 
 
 def select_gaussian_peaks(list_data, peaks, tol=0.2, width=15, sigma=0,
-                          sub_pixel=True, percentile=70, skew_fit=True,
-                          show=False):
+                          sub_pixel=True, percentile=70, skew_fit=True):
     """
     Select good peaks from the input data based on Gaussian fitting and
     tolerance criteria.
@@ -504,8 +502,6 @@ def select_gaussian_peaks(list_data, peaks, tol=0.2, width=15, sigma=0,
         Clipped to [50, 100].
     skew_fit : bool, optional
         Use a skewed Gaussian if True; otherwise use a standard Gaussian.
-    show : bool, optional
-        Plot each accepted peak and its fit.
 
     Returns
     -------
@@ -540,28 +536,11 @@ def select_gaussian_peaks(list_data, peaks, tol=0.2, width=15, sigma=0,
                         good_peaks.append(sub_pos)
                     else:
                         good_peaks.append(p)
-                    if show:
-                        plt.figure(0)
-                        plt.plot(np.arange(len(list_data)), list_data,
-                                 color="blue")
-                        plt.plot([p], list_data[p], "o", color="red")
-                        plt.title(f"Peak location {p}.")
-                        plt.figure(1)
-                        plt.plot(np.arange(start, stop), list_norm, "-o",
-                                 color="blue")
-                        plt.plot(np.arange(start, stop), fit_data, color="red")
-                        plt.plot([sub_pos, sub_pos],
-                                 [np.min(fit_data), np.max(fit_data)],
-                                 color="green")
-                        plt.title(
-                            f"Peak location {p}. Sub {sub_pos}. Check {check}")
-                        plt.grid(True)
-                        plt.show()
     return np.asarray(good_peaks)
 
 
 def locate_peaks_subpixel(list_data, peaks, radius=11, sigma=1,
-                          method="poly_fit", show=False):
+                          method="poly_fit"):
     """
     Locate peaks with sub-pixel accuracy.
 
@@ -578,8 +557,6 @@ def locate_peaks_subpixel(list_data, peaks, radius=11, sigma=1,
     method : {"diff", "poly_fit"}
         Method for finding sub-pixel shift. Two options: a differential
         method or a polynomial method.
-    show : bool, optional
-        Display the plotting result for each peak.
 
     Returns
     -------
@@ -595,20 +572,11 @@ def locate_peaks_subpixel(list_data, peaks, radius=11, sigma=1,
             list_sub = list_data[idx - radius:idx + radius + 1] + 1
             pos = _locate_peak_subpixel(list_sub, method=method)
             peaks_sub.append(idx - radius + pos)
-            if show:
-                x_list = np.arange(idx - radius, idx + radius + 1)
-                plt.plot(x_list, list_sub, "-o", color="blue")
-                plt.plot(np.ones_like(x_list) * (idx - radius + pos),
-                         np.linspace(np.min(list_sub), np.max(list_sub),
-                                     len(x_list)), color="red")
-                plt.title("Sub-pixel peak location {0:.3f}".format(idx + pos))
-                plt.grid(True)
-                plt.show()
     return np.asarray(peaks_sub)
 
 
 def locate_gaussian_peaks_subpixel(list_data, peaks, radius=11, sigma=1,
-                                   skew_fit=True, show=False):
+                                   skew_fit=True):
     """
     Locate peaks with sub-pixel accuracy using Gaussian fitting.
 
@@ -624,8 +592,6 @@ def locate_gaussian_peaks_subpixel(list_data, peaks, radius=11, sigma=1,
         Standard deviation for Gaussian smoothing.
     skew_fit : bool, optional
         Apply skewed Gaussian fitting if True.
-    show : bool, optional
-        Display the plotting result for each peak.
 
     Returns
     -------
@@ -650,23 +616,6 @@ def locate_gaussian_peaks_subpixel(list_data, peaks, radius=11, sigma=1,
                 else:
                     fit_data, sub_pos, check = fit_gaussian_peak(list_norm)
                 sub_pos = sub_pos + start
-                if show:
-                    plt.figure(0)
-                    plt.plot(np.arange(len(list_data)), list_data,
-                             color="blue")
-                    plt.plot([p], list_data[p], "o", color="red")
-                    plt.title(f"Peak location {p}.")
-                    plt.figure(1)
-                    plt.plot(np.arange(start, stop), list_norm, "-o",
-                             color="blue")
-                    plt.plot(np.arange(start, stop), fit_data, color="red")
-                    plt.plot([sub_pos, sub_pos],
-                             [np.min(fit_data), np.max(fit_data)],
-                             color="green")
-                    plt.title(
-                        f"Peak location {p}. Sub {sub_pos}. Check {check}")
-                    plt.grid(True)
-                    plt.show()
                 peaks_sub.append(sub_pos)
     return np.asarray(peaks_sub)
 
