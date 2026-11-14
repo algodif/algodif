@@ -13,8 +13,6 @@ from collections import deque
 from pathlib import Path
 import h5py
 import numpy as np
-import matplotlib
-matplotlib.use("Agg")
 import algodif.io.loadersaver as losa
 
 
