@@ -11,8 +11,7 @@ import algodif.proc.processing as proc
 import algodif.util.utility as util
 import algodif.post.postprocessing as post
 
-file_path = "F:/EDXD_data/rawdata/cr2o3_6deg_10_06_2023.tif"
-# file_path = r"F:\EDXD_data\rawdata\cr2o4deg_20micron_3000s_07_17_2023.tif"
+file_path = "../data/Cr2O3_6_degree_GeRM.tif"
 output_base = "F:/tmp/algodif/q_calibration_single/"
 two_theta = 6.0  # Degree
 energy_bin = 0.0538357407779  # keV Calculated using another script
@@ -25,14 +24,13 @@ image = losa.load_image(file_path)
 
 q_step_list = [util.estimate_q_step_germ_detector(idx, energy_bin, two_theta,
                                   total_germ_strip=192,
-                                  strip_size=0.2, sample_slit=200.0,
+                                  strip_size=0.25, sample_slit=250.0,
                                   sample_detector=2000.0) for idx in range(height)]
 print(q_step_list)
 q_step = np.max(np.asarray(q_step_list))
 print("Q-step ", q_step)
-list_d_intensity_ref = losa.load_d_spacing_from_pearson_crystal_data_file(
-    r"C:\Users\nvo\PycharmProjects\algodif\data\Pearson_Crystal_Data_Cr2O3.csv",
-    threshold=25, num_use=21, check=True)
+calibrant_peaks = util.get_calibrant_diffraction_pattern(
+    element, threshold=2.5, num_use=21, check=True)
 
 
 plt.figure(figsize=fig_size)
@@ -77,20 +75,19 @@ else:
 intensities_ref = np.ones_like(d_spacing_values)
 """
 
-d_spacing_values = list_d_intensity_ref[:, 0]
-intensities_ref = list_d_intensity_ref[:, 1]
-q_values_ref = 2 * np.pi / d_spacing_values
+q_values_ref = calibrant_peaks[:, 0]
+intensities_ref = calibrant_peaks[:, 1]
+d_spacing_values = 2 * np.pi / q_values_ref
 
 
-diff_pattern_ref = util.make_diffraction_pattern(q_values_ref, intensities_ref,
-                                                 q_step, width, sigma=7)
+diff_pattern_ref = util.make_diffraction_pattern(calibrant_peaks, q_step,
+                                                 width, sigma=7)
 list_inten_ref = diff_pattern_ref[:, 1]
 ref_peaks = prep.get_peaks_by_ranked_descent(list_inten_ref, width=5,
                                              ratio=0.1, sigma=0)
 ref_peaks_sub = prep.locate_gaussian_peaks_subpixel(list_inten_ref,
                                                     ref_peaks, radius=2,
-                                                    sigma=0, skew_fit=False,
-                                                    show=False)
+                                                    sigma=0, skew_fit=False)
 plt.figure(figsize=fig_size)
 plt.plot(diff_pattern_ref[:, 0], diff_pattern_ref[:, 1], color='blue')
 plt.plot(diff_pattern_ref[:, 0][ref_peaks], diff_pattern_ref[:, 1][ref_peaks],

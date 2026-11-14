@@ -11,7 +11,7 @@ import algodif.proc.processing as proc
 import algodif.util.utility as util
 import algodif.post.postprocessing as post
 
-file_path = "F:/EDXD_data/rawdata/cr2o3_6deg_10_06_2023.tif"
+file_path = "../data/Cr2O3_6_degree_GeRM.tif"
 output_base = "F:/tmp/algodif/q_calibration_single/"
 
 fit_order = 2
@@ -25,9 +25,8 @@ element = "Cr2O3"
 
 image = losa.load_image(file_path)
 (height, width) = image.shape
-list_d_intensity_ref = losa.load_d_spacing_from_pearson_crystal_data_file(
-    r"C:\Users\nvo\PycharmProjects\algodif\data\Pearson_Crystal_Data_Cr2O3.csv",
-    num_use=16, threshold=35, check=True)
+calibrant_peaks = util.get_calibrant_diffraction_pattern(
+    element, num_use=20, threshold=3.5, check=True)
 
 if strip_idx < 0 or strip_idx > height - 1:
     raise ValueError(f"Index is out of range (0, {height - 1})")
@@ -74,20 +73,19 @@ else:
 intensities_ref = np.ones_like(d_spacing_values)
 """
 
-d_spacing_values = list_d_intensity_ref[:, 0]
-intensities_ref = list_d_intensity_ref[:, 1]
-q_values_ref = 2 * np.pi / d_spacing_values
+q_values_ref = calibrant_peaks[:, 0]
+intensities_ref = calibrant_peaks[:, 1]
+d_spacing_values = 2 * np.pi / q_values_ref
 
 
-diff_pattern_ref = util.make_diffraction_pattern(q_values_ref, intensities_ref,
-                                                 q_step, width, sigma=7)
+diff_pattern_ref = util.make_diffraction_pattern(calibrant_peaks, q_step,
+                                                 width, sigma=7)
 list_inten_ref = diff_pattern_ref[:, 1]
 ref_peaks = prep.get_peaks_by_ranked_descent(list_inten_ref, width=5,
                                              ratio=0.1, sigma=0)
 ref_peaks_sub = prep.locate_gaussian_peaks_subpixel(list_inten_ref,
                                                     ref_peaks, radius=2,
-                                                    sigma=0, skew_fit=False,
-                                                    show=False)
+                                                    sigma=0, skew_fit=False)
 
 # We can calculate the q-step (pixel size) by select two known q-values
 # and the pixel distance between them.
@@ -138,24 +136,21 @@ plt.tight_layout()
 plt.show()
 
 
-# The corresponding peaks of top 5 highest peaks between the measured
-# patterns and reference patterns are:
-# peaks (2,1) <-> (0,3)  # Sorted intensity peaks
 
-# Top 5 measured peaks
-meas_peaks_5_idx = np.argsort(meas_pattern[peaks])[-5:][::-1]
-top5_meas_peaks = peaks[meas_peaks_5_idx]
-# Top 5 reference peaks
+# Top 3 measured peaks
+meas_peaks_3_idx = np.argsort(meas_pattern[peaks])[-3:][::-1]
+top3_meas_peaks = peaks[meas_peaks_3_idx]
+# Top 3 reference peaks
 list_q_ref = diff_pattern_ref[:, 0][ref_peaks]
-ref_peaks_5_idx = np.argsort(list_inten_ref[ref_peaks])[-5:][::-1]
-top5_ref_peaks = ref_peaks[ref_peaks_5_idx]
+ref_peaks_3_idx = np.argsort(list_inten_ref[ref_peaks])[-3:][::-1]
+top3_ref_peaks = ref_peaks[ref_peaks_3_idx]
 
-pixel_distance = abs(sub_peaks_meas[meas_peaks_5_idx[1]] -
-                     sub_peaks_meas[meas_peaks_5_idx[2]])
-q_distance = abs(list_q_ref[ref_peaks_5_idx][0] - list_q_ref[ref_peaks_5_idx][3])
-print("Top 5 peaks and corresponding q-values")
-print(sub_peaks_meas[meas_peaks_5_idx])
-print(list_q_ref[ref_peaks_5_idx])
+pixel_distance = np.max(sub_peaks_meas[meas_peaks_3_idx] -
+                     np.min(sub_peaks_meas[meas_peaks_3_idx]))
+q_distance = np.max(list_q_ref[ref_peaks_3_idx]) - np.min(list_q_ref[ref_peaks_3_idx])
+print("Top 3 peaks and corresponding q-values")
+print(sub_peaks_meas[meas_peaks_3_idx])
+print(list_q_ref[ref_peaks_3_idx])
 q_step = q_distance / pixel_distance
 print("======================================")
 print(f"Pixel distance {pixel_distance}. Q distance: {q_distance}")
@@ -166,21 +161,21 @@ print("======================================")
 fig, axes = plt.subplots(1, 2, figsize=fig_size)
 ax = axes[0]
 ax.plot(np.arange(width), meas_pattern, color="blue")
-ax.plot(np.arange(width)[top5_meas_peaks],
-        meas_pattern[top5_meas_peaks],
+ax.plot(np.arange(width)[top3_meas_peaks],
+        meas_pattern[top3_meas_peaks],
         "o", color="red")
-ax.set_title(f"Strip idx {strip_idx} of measured patterns and top 5 peaks")
+ax.set_title(f"Strip idx {strip_idx} of measured patterns and top 3 peaks")
 ax.minorticks_on()
 ax.grid(True)
 
 ax = axes[1]
 ax.plot(diff_pattern_ref[:, 0], diff_pattern_ref[:, 1], color="blue")
-ax.plot(diff_pattern_ref[:, 0][top5_ref_peaks],
-        diff_pattern_ref[:, 1][top5_ref_peaks],
+ax.plot(diff_pattern_ref[:, 0][top3_ref_peaks],
+        diff_pattern_ref[:, 1][top3_ref_peaks],
         "o", color="red")
 ax.set_xlabel("Q (1/A)")
 ax.set_ylabel("Intensity")
-ax.set_title(f"Reference pattern of {element} and top 5 peaks")
+ax.set_title(f"Reference pattern of {element} and top 3 peaks")
 ax.minorticks_on()
 ax.grid(True)
 

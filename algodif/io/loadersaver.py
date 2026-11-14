@@ -27,6 +27,7 @@ Module for I/O tasks:
     -   Get file names, make file/folder name.
 """
 
+import io
 import csv
 import json
 import platform
@@ -34,6 +35,7 @@ import datetime
 from pathlib import Path
 from fnmatch import fnmatchcase
 from collections import deque
+import zipfile
 import h5py
 import numpy as np
 from PIL import Image
@@ -873,7 +875,7 @@ def load_csv(file_path, dtype=float, delimiter=","):
     return data
 
 
-def save_csv(file_path, data):
+def save_csv(file_path, data, overwrite=True):
     """
     Save a 2D list or a NumPy array to a CSV file.
 
@@ -886,8 +888,15 @@ def save_csv(file_path, data):
         Path to the file.
     data : list of lists or numpy.ndarray
         The 2D data to be saved into a CSV file.
+    overwrite : bool, optional
+        Overwrite an existing file if True. Default is True.
     """
     file_path = __get_path(file_path, check_exist=False)
+    file_path = file_path.resolve()
+    if file_path.suffix.lower() != ".csv":
+        file_path = file_path.with_suffix(".csv")
+    if not overwrite:
+        file_path = make_file_name(file_path)
     make_folder(file_path)
     if isinstance(data, np.ndarray):
         data = data.tolist()
@@ -899,3 +908,174 @@ def save_csv(file_path, data):
             writer.writerows(data)
     except Exception as e:
         raise IOError(f"Failed to save CSV file at {file_path}. Error: {e}")
+
+
+def save_xy(file_path, x_map, image, file_type="xy", zip_file=True,
+            overwrite=True):
+    """
+    Save each row of q_map (or energy map) and image as an XY/CSV file.
+
+    Parameters
+    ----------
+    file_path : str or Path object
+        Output path. If zip_file is True, a ZIP archive (".zip" suffix
+        enforced). If zip_file is False, a folder (any suffix is removed).
+    x_map : array_like
+        2D array of x values (q or energy), same shape as image.
+    image : array_like
+        2D array of intensities.
+    file_type : {"xy", "csv"}
+        Format of each row file.
+    zip_file : bool
+        Save into a ZIP archive if True, otherwise into a folder of files.
+    overwrite : bool
+        If False, a new name is generated to avoid overwriting.
+
+    Returns
+    -------
+    str
+        Path to the ZIP file or the output folder.
+    """
+    if file_type not in ("xy", "csv"):
+        raise ValueError("Only two options: 'xy', 'csv'")
+    x_map = np.asarray(x_map)
+    image = np.asarray(image)
+    if x_map.ndim != 2 or x_map.shape != image.shape:
+        raise ValueError("q_map/energy_map and image must be 2D arrays of the "
+                         "same shape.")
+    file_path = __get_path(file_path, check_exist=False).resolve()
+    if zip_file:
+        if file_path.suffix.lower() != ".zip":
+            file_path = file_path.with_suffix(".zip")
+    else:
+        file_path = file_path.with_suffix("")
+    if not overwrite:
+        file_path = Path(make_file_name(file_path))
+    delimiter = " " if file_type == "xy" else ","
+    num_digits = max(3, len(str(image.shape[0] - 1)))
+
+    def __row_text(row):
+        data = np.column_stack((x_map[row], image[row]))
+        with io.StringIO() as buffer:
+            np.savetxt(buffer, data, fmt="%.10g", delimiter=delimiter)
+            return buffer.getvalue()
+
+    try:
+        if zip_file:
+            make_folder(file_path)
+            with zipfile.ZipFile(file_path, "w",
+                                 compression=zipfile.ZIP_DEFLATED) as archive:
+                for row in range(image.shape[0]):
+                    archive.writestr(f"strip_{row:0{num_digits}d}.{file_type}",
+                                     __row_text(row))
+        else:
+            file_path.mkdir(parents=True, exist_ok=True)
+            for row in range(image.shape[0]):
+                out_file = file_path / f"strip_{row:0{num_digits}d}.{file_type}"
+                out_file.write_text(__row_text(row), encoding="utf-8")
+    except Exception as error:
+        raise ValueError(f"Couldn't write to: {file_path}. Error {error}")
+    return str(file_path)
+
+
+def __load_vesta_data(input_path):
+    """
+    Load d-spacings and intensities (max scaled to 100) from a VESTA TXT
+    file, skipping rows with d = 0.
+    """
+    # Columns: h, k, l, d, F(real), F(imag), |F|, 2theta, I, M
+    data = np.loadtxt(__get_path(input_path), skiprows=1, usecols=(3, 8),
+                      ndmin=2, encoding="utf-8-sig")
+    d_spacing, intensity = data.T
+    keep = d_spacing != 0
+    d_spacing, intensity = d_spacing[keep], intensity[keep]
+    if (d_spacing.size == 0 or not np.all(np.isfinite(d_spacing))
+            or not np.all(np.isfinite(intensity))
+            or np.any(d_spacing < 0) or np.any(intensity < 0)
+            or intensity.max() <= 0):
+        raise ValueError("Invalid d-spacings/intensities in the input file.")
+    return d_spacing, 100 * intensity / intensity.max()
+
+
+def convert_vesta_to_csv(input_path, output_path=None):
+    """
+    Convert a VESTA powder-diffraction TXT file to a CSV of q and normalized
+    intensity.
+
+    The input is the reflection list exported by VESTA
+    (https://jp-minerals.org/vesta/en/download.html) from a calibrant CIF
+    file, with one header line and columns h, k, l, d, F(real), F(imag), |F|,
+    2theta, I, M.
+
+    Parameters
+    ----------
+    input_path : str or Path object
+        Path to the VESTA TXT file.
+    output_path : str or Path object, optional
+        Path to the output CSV file. Default: input path with ".csv" suffix.
+
+    Returns
+    -------
+    str
+        Path to the output CSV file. It has a header line
+        "q_A^-1,intensity_normalized", then rows of q = 2*pi/d (1/Angstrom)
+        sorted ascending, with intensity scaled so the maximum is 100.
+    """
+    input_path = __get_path(input_path)
+    d_spacing, intensity = __load_vesta_data(input_path)
+    q = 2 * np.pi / d_spacing
+    order = np.argsort(q)
+    if output_path is None:
+        output_path = Path(input_path).with_suffix(".csv")
+    else:
+        output_path = __get_path(output_path, check_exist=False)
+        output_path = output_path.resolve()
+        if output_path.suffix.lower() != ".csv":
+            output_path = output_path.with_suffix(".csv")
+        make_folder(output_path)
+    np.savetxt(output_path, np.column_stack((q[order], intensity[order])),
+               delimiter=",", header="q_A^-1,intensity_normalized",
+               comments="", fmt="%.10g")
+    return str(output_path)
+
+
+def load_d_spacing_from_vesta_file(file_path, num_use=12, threshold=35,
+                                   norm=True, check=True):
+    """
+    Load and select d-spacing values from a VESTA powder-diffraction TXT file.
+
+    Parameters
+    ----------
+    file_path : str or Path object
+        Path to the VESTA TXT file.
+    num_use : int, optional
+        Maximum number of reflections to return (default: 12).
+    threshold : float, optional
+        Minimum intensity, on a scale where the strongest peak is 100, for
+        peak selection (default: 35).
+    norm : bool, optional
+        Scale intensities so the maximum selected one is 1 if True, otherwise
+        keep the 0-100 scale (default: True).
+    check : bool, optional
+        Print output if True (default: True).
+
+    Returns
+    -------
+    ndarray of shape (N, 2)
+        [d_spacing (Angstrom), intensity] pairs sorted by decreasing d-spacing.
+        Rows with d = 0 are skipped and duplicate rows merged.
+    """
+    d_spacing, intensity = __load_vesta_data(file_path)
+    mask = intensity > threshold
+    unique_rows = np.unique(np.column_stack((d_spacing[mask],
+                                             intensity[mask])), axis=0)
+    d_spacing = unique_rows[::-1, 0][:num_use]
+    intensity = unique_rows[::-1, 1][:num_use]
+    if norm and intensity.size > 0:
+        intensity = intensity / np.max(intensity)
+    if check:
+        q_values = 2 * np.pi / d_spacing
+        for i, d in enumerate(d_spacing):
+            print(f"{i + 1: 2}. q-value {q_values[i]: 0.3f}. "
+                  f"d-spacing: {d: 0.3f}. Intensity {intensity[i]: 0.3f}")
+    return np.column_stack((d_spacing, intensity))

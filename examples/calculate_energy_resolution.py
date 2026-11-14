@@ -117,7 +117,7 @@ plt.show()
 
 subpixel_peaks = prep.locate_gaussian_peaks_subpixel(image[mid_channel], [pos1, pos2],
                                                      radius=21, sigma=1,
-                                                     skew_fit=True, show=True)
+                                                     skew_fit=True)
 distance_pixel = abs(subpixel_peaks[0] - subpixel_peaks[1])
 
 energy_bin = energy_gap_2_peaks / distance_pixel

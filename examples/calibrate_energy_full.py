@@ -43,8 +43,7 @@ theo_peaks = prep.get_peaks_by_ranked_descent(list_theo_inten, width=5,
                                               ratio=0.1, sigma=0)
 theo_peaks_sub = prep.locate_gaussian_peaks_subpixel(list_theo_inten,
                                                      theo_peaks, radius=2,
-                                                     sigma=1, skew_fit=False,
-                                                     show=False)
+                                                     sigma=1, skew_fit=False)
 reference_energies = theo_peaks_sub * energy_bin
 # Note there's impact of Gaussian filter to simulate the spectrum.
 plt.figure(figsize=fig_size)

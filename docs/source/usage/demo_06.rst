@@ -9,7 +9,7 @@ directly in q-space without the detector geometry. The only required input is
 an estimate of the q-step (q per pixel), which can be extracted from the
 measured data as shown below.
 
-- Load the data and the reference d-spacing values. An initial q-step is only
+- Load the data and the reference diffraction peaks. An initial q-step is only
   used to generate the reference pattern for plotting.
 
     .. code-block:: python
@@ -23,7 +23,7 @@ measured data as shown below.
         import algodif.util.utility as util
 
         file_path = "../data/Cr2O3_6_degree_GeRM.tif"
-        ref_path = "../data/Pearson_Crystal_Data_Cr2O3.csv"
+        calibrant = "Cr2O3"
         fit_order = 2
         strip_idx = 100
         q_step = 0.0015  # Initial guess
@@ -31,15 +31,14 @@ measured data as shown below.
 
         image = losa.load_image(file_path)
         (height, width) = image.shape
-        list_d_intensity_ref = losa.load_d_spacing_from_pearson_crystal_data_file(
-            ref_path, num_use=16, threshold=35, check=True)
-        d_spacing_values = list_d_intensity_ref[:, 0]
-        intensities_ref = list_d_intensity_ref[:, 1]
-        q_values_ref = 2 * np.pi / d_spacing_values
+        calibrant_peaks = util.get_calibrant_diffraction_pattern(
+            calibrant, num_use=20, threshold=3.5, check=True)
+        q_values_ref = calibrant_peaks[:, 0]
+        d_spacing_values = 2 * np.pi / q_values_ref
 
-        diff_pattern_ref = util.make_diffraction_pattern(q_values_ref,
-                                                         intensities_ref, q_step,
-                                                         width, sigma=7)
+        diff_pattern_ref = util.make_diffraction_pattern(calibrant_peaks,
+                                                         q_step, width,
+                                                         sigma=7)
         list_inten_ref = diff_pattern_ref[:, 1]
         ref_peaks = prep.get_peaks_by_ranked_descent(list_inten_ref, width=5,
                                                      ratio=0.1, sigma=0)
@@ -65,26 +64,24 @@ measured data as shown below.
         Measured pattern and located peaks (left). Reference pattern and its
         major peaks (right).
 
-- Estimate the q-step by identifying two pairs of corresponding peaks between
-  the measured pattern and the reference pattern. By inspecting the top 5
-  highest peaks, the 2\ :sup:`nd` and 3\ :sup:`rd` measured peaks correspond to
-  the 1\ :sup:`st` and 4\ :sup:`th` reference peaks:
+- Estimate the q-step from the top 3 highest peaks of the measured pattern and
+  of the reference pattern. The q-step is the q-distance between the outermost
+  reference peaks divided by the pixel distance between the outermost measured
+  peaks:
 
     .. code-block:: python
-        :emphasize-lines: 13
+        :emphasize-lines: 11
 
-        # Top 5 measured peaks
-        meas_peaks_5_idx = np.argsort(meas_pattern[peaks])[-5:][::-1]
-        top5_meas_peaks = peaks[meas_peaks_5_idx]
-        # Top 5 reference peaks
+        # Top 3 measured peaks
+        meas_peaks_3_idx = np.argsort(meas_pattern[peaks])[-3:][::-1]
+        top3_meas_peaks = peaks[meas_peaks_3_idx]
+        # Top 3 reference peaks
         list_q_ref = diff_pattern_ref[:, 0][ref_peaks]
-        ref_peaks_5_idx = np.argsort(list_inten_ref[ref_peaks])[-5:][::-1]
-        top5_ref_peaks = ref_peaks[ref_peaks_5_idx]
+        ref_peaks_3_idx = np.argsort(list_inten_ref[ref_peaks])[-3:][::-1]
+        top3_ref_peaks = ref_peaks[ref_peaks_3_idx]
 
-        pixel_distance = abs(sub_peaks_meas[meas_peaks_5_idx[1]] -
-                             sub_peaks_meas[meas_peaks_5_idx[2]])
-        q_distance = abs(list_q_ref[ref_peaks_5_idx][0] -
-                         list_q_ref[ref_peaks_5_idx][3])
+        pixel_distance = np.ptp(sub_peaks_meas[meas_peaks_3_idx])
+        q_distance = np.ptp(list_q_ref[ref_peaks_3_idx])
         q_step = q_distance / pixel_distance
         print(f"Measured q-step: {q_step}")
 
@@ -94,7 +91,7 @@ measured data as shown below.
         :align: center
         :figclass: align-center
 
-        Top 5 peaks of the measured pattern (left) and of the reference
+        Top 3 peaks of the measured pattern (left) and of the reference
         pattern (right).
 
 - Calibrate the strip directly in q-space. Note that the search range is now

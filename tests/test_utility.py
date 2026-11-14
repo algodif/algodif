@@ -75,8 +75,14 @@ class UtilityMethods(unittest.TestCase):
         self.assertTrue(
             abs(spectrum[np.argmax(spectrum[:, 1]), 0] - 8.048) < 0.02)
 
+        spectrum = util.make_fluorescence_spectrum([10.03, 20.0], 0.1, 300,
+                                                   sigma=0, norm=False)
+        self.assertEqual(spectrum[100, 1], 1.0)
+        self.assertEqual(spectrum[200, 1], 1.0)
+        self.assertEqual(np.count_nonzero(spectrum[:, 1]), 2)
+
         self.assertRaises(ValueError, util.make_fluorescence_spectrum,
-                          np.asarray([10.0, 1.0]), 0.1, 300)
+                          np.ones((2, 2, 2)), 0.1, 300)
         self.assertRaises(ValueError, util.make_fluorescence_spectrum,
                           np.ones((2, 3)), 0.1, 300)
 
@@ -191,10 +197,71 @@ class UtilityMethods(unittest.TestCase):
             self.two_theta, total_germ_strip=191)
         self.assertTrue(np.isclose(two_theta_list[95], self.two_theta))
 
+    def test_list_xrd_calibrants(self):
+        names = util.list_xrd_calibrants()
+        self.assertEqual(names, sorted(names))
+        for name in ("Al2O3", "CeO2", "Cr2O3", "LaB6", "Si"):
+            self.assertTrue(name in names)
+        self.assertTrue(all(not name.endswith(".csv") for name in names))
+
+    def test_get_calibrant_diffraction_pattern(self):
+        f_alias = util.get_calibrant_diffraction_pattern
+        # Cr2O3 reflections with intensity above 35 (strongest peak = 100).
+        d_expected = np.asarray([3.631895, 2.665959, 2.480350, 1.815948,
+                                 1.673162, 1.465227, 1.432031])
+        i_expected = np.asarray([59.26184, 91.69583, 87.15836, 41.18903,
+                                 100.0, 36.89734, 48.72557])
+        results = f_alias("Cr2O3", threshold=35, check=False)
+        self.assertTrue(np.allclose(results[:, 0], 2 * np.pi / d_expected))
+        self.assertTrue(np.allclose(results[:, 1], i_expected / 100.0))
+        self.assertTrue(np.all(np.diff(results[:, 0]) > 0))
+
+        for name in ("cr2o3", "CR2O3", " Cr2O3 "):
+            self.assertTrue(np.allclose(
+                f_alias(name, threshold=35, check=False), results))
+
+        results = f_alias("Cr2O3", threshold=35, norm=False, check=False)
+        self.assertTrue(np.allclose(results[:, 1], i_expected))
+
+        results = f_alias("Cr2O3", num_use=3, threshold=35, check=False)
+        self.assertTrue(np.allclose(results[:, 0], 2 * np.pi / d_expected[:3]))
+        self.assertTrue(np.isclose(np.max(results[:, 1]), 1.0))
+
+        # Defaults: the 15 largest d-spacings with intensity above 10.
+        d_default = np.asarray([3.631895, 2.665959, 2.480350, 2.175912,
+                                1.815948, 1.673162, 1.465227, 1.432031,
+                                1.296496, 1.240175, 1.148997, 1.124462,
+                                1.087956, 1.042567, 0.896186])
+        results = f_alias("Cr2O3", check=False)
+        self.assertTrue(np.allclose(results[:, 0], 2 * np.pi / d_default))
+
+        results = f_alias("Cr2O3", threshold=100, check=False)
+        self.assertEqual(results.shape, (0, 2))
+
+        results = f_alias("Cr2O3", num_use=None, threshold=0, norm=False,
+                          check=False)
+        self.assertEqual(len(np.unique(results, axis=0)), len(results))
+        self.assertTrue(np.isclose(np.max(results[:, 1]), 100.0))
+
+        for name in util.list_xrd_calibrants():
+            results = f_alias(name, check=False)
+            self.assertTrue(len(results) > 0)
+            self.assertTrue(np.all(results[:, 0] > 0))
+            self.assertTrue(np.isclose(np.max(results[:, 1]), 1.0))
+
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            f_alias("Cr2O3", threshold=35, check=True)
+        lines = buffer.getvalue().strip().splitlines()
+        self.assertEqual(len(lines), len(d_expected))
+        self.assertTrue("q-value" in lines[0] and "d-spacing" in lines[0])
+
+        self.assertRaises(ValueError, f_alias, "Unobtainium")
+
     def test_make_diffraction_pattern(self):
         q_step = 0.01
         npoint = 300
-        pattern = util.make_diffraction_pattern([1.003, 2.0], [1.0, 0.5],
+        pattern = util.make_diffraction_pattern([[1.003, 1.0], [2.0, 0.5]],
                                                 q_step, npoint, sigma=0,
                                                 norm=False)
         self.assertEqual(pattern.shape, (300, 2))
@@ -204,7 +271,53 @@ class UtilityMethods(unittest.TestCase):
         self.assertEqual(pattern[200, 1], 0.5)
         self.assertEqual(np.count_nonzero(pattern[:, 1]), 2)
 
-        pattern = util.make_diffraction_pattern([1.0, 2.0], [1.0, 0.5], q_step,
-                                                npoint, sigma=3)
+        pattern = util.make_diffraction_pattern([[1.0, 1.0], [2.0, 0.5]],
+                                                q_step, npoint, sigma=3)
         self.assertTrue(np.isclose(np.max(pattern[:, 1]), 1.0))
         self.assertEqual(np.argmax(pattern[:, 1]), 100)
+
+        pattern = util.make_diffraction_pattern([1.0, 2.0], q_step, npoint,
+                                                sigma=0, norm=False)
+        self.assertEqual(pattern[100, 1], 1.0)
+        self.assertEqual(pattern[200, 1], 1.0)
+        self.assertEqual(np.count_nonzero(pattern[:, 1]), 2)
+
+        self.assertRaises(ValueError, util.make_diffraction_pattern,
+                          [[1.0, 1.0, 1.0]], q_step, npoint)
+        self.assertRaises(ValueError, util.make_diffraction_pattern,
+                          np.ones((2, 2, 2)), q_step, npoint)
+
+    def test_q_to_two_theta(self):
+        two_theta = util.q_to_two_theta(2.5)
+        self.assertTrue(isinstance(two_theta, float))
+        self.assertTrue(np.isclose(two_theta, 90.0))
+
+        q = np.linspace(0.0, 4.0, 9)
+        two_theta = util.q_to_two_theta(q, max_two_theta=60.0)
+        self.assertEqual(two_theta.shape, q.shape)
+        self.assertTrue(np.isclose(two_theta[0], 0.0))
+        self.assertTrue(np.isclose(two_theta[-1], 60.0))
+        self.assertTrue(np.all(np.diff(two_theta) > 0))
+        # q / sin(theta) must stay constant for a single wavelength.
+        ratio = q[1:] / np.sin(np.radians(two_theta[1:] / 2))
+        self.assertTrue(np.allclose(ratio, ratio[0]))
+
+        q_map = np.array([[1.0, 2.0], [3.0, 4.0]])
+        two_theta, energy = util.q_to_two_theta(q_map, return_energy=True)
+        self.assertEqual(two_theta.shape, (2, 2))
+        self.assertTrue(np.isclose(two_theta[1, 1], 90.0))
+        self.assertTrue(isinstance(energy, float))
+        wavelength = 4 * np.pi * np.sin(np.radians(45.0)) / 4.0
+        self.assertTrue(np.isclose(energy, 12.398 / wavelength))
+        two_theta_row = util.q_to_two_theta(q_map[0])
+        self.assertTrue(np.isclose(two_theta_row[-1], 90.0))
+        self.assertFalse(np.isclose(two_theta[0, 1], 90.0))
+
+        self.assertRaises(ValueError, util.q_to_two_theta, np.ones((2, 2, 2)))
+        self.assertRaises(ValueError, util.q_to_two_theta, [])
+        self.assertRaises(ValueError, util.q_to_two_theta, [1.0, -1.0])
+        self.assertRaises(ValueError, util.q_to_two_theta, [1.0, np.nan])
+        self.assertRaises(ValueError, util.q_to_two_theta, [0.0, 0.0])
+        self.assertRaises(ValueError, util.q_to_two_theta, 1.0, 0.0)
+        self.assertRaises(ValueError, util.q_to_two_theta, 1.0, 180.0)
+        self.assertRaises(ValueError, util.q_to_two_theta, 1.0, np.inf)

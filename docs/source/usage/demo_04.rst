@@ -8,9 +8,9 @@ a single strip of the GeRM detector using the diffraction pattern of
 Cr\ :sub:`2`\ O\ :sub:`3`. The detector geometry is used to estimate the energy
 of each reference peak, which provides a good initial guess for peak matching.
 
-- Load the data and the reference d-spacing values. The d-spacing values and
-  intensities are loaded from a CSV file exported from the
-  `Pearson crystal database <https://www.crystalimpact.com/pcd/>`__:
+- Load the data and the reference diffraction peaks. The q-values and
+  intensities of Cr\ :sub:`2`\ O\ :sub:`3` are loaded from the calibrants
+  bundled with algodif (see ``util.list_xrd_calibrants()``):
 
     .. code-block:: python
 
@@ -23,7 +23,7 @@ of each reference peak, which provides a good initial guess for peak matching.
         import algodif.util.utility as util
 
         file_path = "../data/Cr2O3_6_degree_GeRM.tif"
-        ref_path = "../data/Pearson_Crystal_Data_Cr2O3.csv"
+        calibrant = "Cr2O3"
         fit_order = 2
         two_theta = 6.0  # Degree
         energy_bin = 0.0538357407779  # keV
@@ -32,11 +32,10 @@ of each reference peak, which provides a good initial guess for peak matching.
 
         image = losa.load_image(file_path)
         (height, width) = image.shape
-        list_d_intensity_ref = losa.load_d_spacing_from_pearson_crystal_data_file(
-            ref_path, num_use=16, threshold=35, check=True)
-        d_spacing_values = list_d_intensity_ref[:, 0]
-        intensities_ref = list_d_intensity_ref[:, 1]
-        q_values_ref = 2 * np.pi / d_spacing_values
+        calibrant_peaks = util.get_calibrant_diffraction_pattern(
+            calibrant, num_use=16, threshold=3.5, check=True)
+        q_values_ref = calibrant_peaks[:, 0]
+        d_spacing_values = 2 * np.pi / q_values_ref
 
     .. figure:: figs/demo_04/fig1.png
         :name: fig_demo04_1
@@ -57,9 +56,9 @@ of each reference peak, which provides a good initial guess for peak matching.
                                                     strip_size=0.2,
                                                     sample_slit=200.0,
                                                     sample_detector=2000.0)
-        diff_pattern_ref = util.make_diffraction_pattern(q_values_ref,
-                                                         intensities_ref, q_step,
-                                                         width, sigma=7)
+        diff_pattern_ref = util.make_diffraction_pattern(calibrant_peaks,
+                                                         q_step, width,
+                                                         sigma=7)
         ref_peaks = prep.get_peaks_by_ranked_descent(diff_pattern_ref[:, 1],
                                                      width=5, ratio=0.1, sigma=0)
 

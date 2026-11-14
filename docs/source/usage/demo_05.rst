@@ -7,7 +7,7 @@ After finding good parameters for a single strip (:ref:`demo_04`), the
 q-calibration can be applied to all strips of the GeRM detector. For each strip,
 the energies of the reference peaks are estimated from the detector geometry.
 
-- Load the data, the reference d-spacing values, and estimate the q-step:
+- Load the data, the reference diffraction peaks, and estimate the q-step:
 
     .. code-block:: python
 
@@ -19,7 +19,7 @@ the energies of the reference peaks are estimated from the detector geometry.
         import algodif.util.utility as util
 
         file_path = "../data/Cr2O3_6_degree_GeRM.tif"
-        ref_path = "../data/Pearson_Crystal_Data_Cr2O3.csv"
+        calibrant = "Cr2O3"
         output_base = "F:/tmp/algodif/q_calibration_full/"
         fit_order = 2
         two_theta = 6.0  # Degree
@@ -27,20 +27,19 @@ the energies of the reference peaks are estimated from the detector geometry.
 
         image = losa.load_image(file_path)
         (height, width) = image.shape
-        list_d_intensity_ref = losa.load_d_spacing_from_pearson_crystal_data_file(
-            ref_path, num_use=18, threshold=35, check=True)
-        d_spacing_values = list_d_intensity_ref[:, 0]
-        intensities_ref = list_d_intensity_ref[:, 1]
-        q_values_ref = 2 * np.pi / d_spacing_values
+        calibrant_peaks = util.get_calibrant_diffraction_pattern(
+            calibrant, num_use=18, threshold=3.5, check=True)
+        q_values_ref = calibrant_peaks[:, 0]
+        d_spacing_values = 2 * np.pi / q_values_ref
 
         q_step = util.estimate_q_step_germ_detector(0, energy_bin, two_theta,
                                                     total_germ_strip=192,
                                                     strip_size=0.2,
                                                     sample_slit=200.0,
                                                     sample_detector=2000.0)
-        diff_pattern_ref = util.make_diffraction_pattern(q_values_ref,
-                                                         intensities_ref, q_step,
-                                                         width, sigma=7)
+        diff_pattern_ref = util.make_diffraction_pattern(calibrant_peaks,
+                                                         q_step, width,
+                                                         sigma=7)
 
     .. figure:: figs/demo_05/fig1.png
         :name: fig_demo05_1

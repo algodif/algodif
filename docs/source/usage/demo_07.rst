@@ -21,7 +21,7 @@ it can also be measured from the data of each strip as shown in
         import algodif.util.utility as util
 
         file_path = "../data/Cr2O3_6_degree_GeRM.tif"
-        ref_path = "../data/Pearson_Crystal_Data_Cr2O3.csv"
+        calibrant = "Cr2O3"
         two_theta = 6.0  # Degree
         energy_bin = 0.0538357407779  # keV
         fit_order = 2
@@ -33,14 +33,13 @@ it can also be measured from the data of each strip as shown in
             sample_slit=200.0, sample_detector=2000.0) for idx in range(height)]
         q_step = np.max(q_step_list)
 
-        list_d_intensity_ref = losa.load_d_spacing_from_pearson_crystal_data_file(
-            ref_path, num_use=21, threshold=25, check=True)
-        d_spacing_values = list_d_intensity_ref[:, 0]
-        intensities_ref = list_d_intensity_ref[:, 1]
-        q_values_ref = 2 * np.pi / d_spacing_values
-        diff_pattern_ref = util.make_diffraction_pattern(q_values_ref,
-                                                         intensities_ref, q_step,
-                                                         width, sigma=7)
+        calibrant_peaks = util.get_calibrant_diffraction_pattern(
+            calibrant, num_use=21, threshold=2.5, check=True)
+        q_values_ref = calibrant_peaks[:, 0]
+        d_spacing_values = 2 * np.pi / q_values_ref
+        diff_pattern_ref = util.make_diffraction_pattern(calibrant_peaks,
+                                                         q_step, width,
+                                                         sigma=7)
 
     .. figure:: figs/demo_07/fig1.png
         :name: fig_demo07_1

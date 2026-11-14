@@ -67,6 +67,7 @@ def remove_background_based_als(list_data, ld=1e6, weight=0.05, num_iter=10):
     References
     ----------
     [1] : https://doi.org/10.1021/ac051370e
+
     [2] : https://irfpy.irf.se/projects/ica/_modules/irfpy/ica/baseline.html
     """
     list_data = np.asarray(list_data)
@@ -109,6 +110,7 @@ def remove_background_based_arpls(list_data, ld=1e5, weight=0.05, num_iter=10):
     References
     ----------
     [1] : https://doi.org/10.1039/C4AN01061B
+
     [2] : https://irfpy.irf.se/projects/ica/_modules/irfpy/ica/baseline.html
     """
     list_data = np.asarray(list_data)
@@ -176,6 +178,7 @@ def remove_image_background_based_als(image, axis=0, ld=1e6, weight=0.05,
     References
     ----------
     [1] : https://doi.org/10.1021/ac051370e
+
     [2] : https://irfpy.irf.se/projects/ica/_modules/irfpy/ica/baseline.html
     """
 
@@ -240,6 +243,7 @@ def remove_image_background_based_arpls(image, axis=0, ld=1e6, weight=0.05,
     References
     ----------
     [1] : https://doi.org/10.1039/C4AN01061B
+
     [2] : https://irfpy.irf.se/projects/ica/_modules/irfpy/ica/baseline.html
     """
     max_cores = cpu_count()

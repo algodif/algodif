@@ -22,6 +22,7 @@
 
 
 import warnings
+from importlib.resources import files
 import numpy as np
 import scipy.ndimage as ndi
 import xraydb
@@ -84,16 +85,19 @@ def make_fluorescence_spectrum(fluorescent_lines, energy_step, data_point,
 
     Parameters
     ----------
-    fluorescent_lines : array_like,
-       Shape of (N, 2). Array containing energy and intensity values for
-       theoretical fluorescent lines. The first row must be energies, the
-       second row must be corresponding intensities.
+    fluorescent_lines : array_like
+       Theoretical fluorescent lines. Either shape (N, 2) with rows of
+       [energy (keV), intensity], e.g. the output of
+       get_fluorescence_lines_from_database, or a 1D array of energies, in
+       which case all intensities are 1.
     energy_step : float
        Step size between energy bins. Unit is keV.
     data_point : int
        Total number of points in the generated spectrum.
     sigma : float, optional
        Standard deviation for optional Gaussian smoothing.
+    norm : bool, optional
+       Normalize the maximum intensity to one.
 
     Returns
     -------
@@ -101,13 +105,16 @@ def make_fluorescence_spectrum(fluorescent_lines, energy_step, data_point,
        Shape of (data_point, 2). Simulated spectrum as an array of
        [energy, intensity] pairs.
     """
-
-    if len(fluorescent_lines.shape) != 2:
-        raise ValueError("Wrong input! Check API document")
-    if fluorescent_lines.shape[1] != 2:
-        raise ValueError("Shape of the input must be (N, 2)")
-    theo_energies = fluorescent_lines[:, 0]
-    theo_intensities = fluorescent_lines[:, 1]
+    fluorescent_lines = np.asarray(fluorescent_lines, dtype=float)
+    if fluorescent_lines.ndim == 1:
+        theo_energies = fluorescent_lines
+        theo_intensities = np.ones_like(theo_energies)
+    elif fluorescent_lines.ndim == 2 and fluorescent_lines.shape[1] == 2:
+        theo_energies = fluorescent_lines[:, 0]
+        theo_intensities = fluorescent_lines[:, 1]
+    else:
+        raise ValueError("Input must be a 1D array of energies or an (N, 2) "
+                         "array of [energy, intensity]")
     inter_energies = np.arange(data_point) * energy_step
     max_inter_e = inter_energies[-1]
     max_theo_e = np.max(theo_energies)
@@ -414,19 +421,87 @@ def get_two_theta_list_germ_detector(two_theta, total_germ_strip=192,
     return np.asarray(two_theta_list)
 
 
-def make_diffraction_pattern(list_q_theory, list_intensity, q_step, data_point,
-                             sigma=3, norm=True):
+def list_xrd_calibrants():
+    """
+    List the X-ray diffraction calibrants shipped with algodif.
+
+    Returns
+    -------
+    list of str
+        Sorted calibrant names, e.g. ["Al2O3", "CeO2", "Cr2O3", "LaB6", "Si"].
+        Each name can be passed to get_calibrant_diffraction_pattern.
+    """
+    folder = files("algodif").joinpath("calibrants")
+    return sorted(item.name[:-len(".csv")] for item in folder.iterdir()
+                  if item.is_file() and item.name.endswith(".csv"))
+
+
+def get_calibrant_diffraction_pattern(name, num_use=15, threshold=10,
+                                      norm=True, check=True):
+    """
+    Load and select reflections from the reference diffraction pattern of a
+    calibrant bundled with algodif.
+
+    Parameters
+    ----------
+    name : str
+        Calibrant name (case-insensitive), e.g. "Cr2O3" or "cr2o3". Use
+        list_xrd_calibrants to see the available names.
+    num_use : int, optional
+        Maximum number of reflections to return (default: 15).
+    threshold : float, optional
+        Minimum intensity, on a scale where the strongest peak is 100, for
+        peak selection (default: 10).
+    norm : bool, optional
+        Scale intensities so the maximum selected one is 1 if True, otherwise
+        keep the 0-100 scale (default: True).
+    check : bool, optional
+        Print output if True (default: True).
+
+    Returns
+    -------
+    numpy.ndarray
+        2D array of shape (N, 2). Each row is [q (1/Angstrom), intensity],
+        sorted by ascending q (i.e. decreasing d-spacing).
+    """
+    available = list_xrd_calibrants()
+    lookup = {item.casefold(): item for item in available}
+    file_name = lookup.get(str(name).strip().casefold())
+    if file_name is None:
+        raise ValueError(f"Unknown calibrant {name!r}. "
+                         f"Available: {', '.join(available)}")
+    resource = (files("algodif").joinpath("calibrants")
+                .joinpath(f"{file_name}.csv"))
+    with resource.open("r", encoding="utf-8-sig") as file:
+        data = np.loadtxt(file, delimiter=",", skiprows=1, usecols=(0, 1),
+                          ndmin=2)
+    data = np.unique(data[data[:, 1] > threshold], axis=0)[:num_use]
+    q_values, intensity = data[:, 0], data[:, 1]
+    if norm and intensity.size > 0:
+        intensity = intensity / np.max(intensity)
+    if check:
+        d_spacing = 2 * np.pi / q_values
+        for i, q in enumerate(q_values):
+            print(f"{i + 1: 2}. q-value {q: 0.3f}. "
+                  f"d-spacing: {d_spacing[i]: 0.3f}. "
+                  f"Intensity {intensity[i]: 0.3f}")
+    return np.column_stack((q_values, intensity))
+
+
+def make_diffraction_pattern(diffraction_peaks, q_step, data_point, sigma=3,
+                             norm=True):
     """
     Generate a diffraction pattern on a uniform q grid.
 
     Parameters
     ----------
-    list_q_theory : array_like
-        One-dimensional array of theoretical peak q positions.
-    list_intensity : array_like
-        Corresponding peak intensities.
+    diffraction_peaks : array_like
+        Theoretical peaks. Either shape (N, 2) with rows of
+        [q (1/Angstrom), intensity], e.g. the output of
+        get_calibrant_diffraction_pattern, or a 1D array of q values, in
+        which case all intensities are 1.
     q_step : float
-        Positive grid spacing, in the same units as list_q_theory.
+        Positive grid spacing, in the same units as the q values.
     data_point : int
         Number of grid points, starting at q = 0.
     sigma : float, optional
@@ -437,27 +512,34 @@ def make_diffraction_pattern(list_q_theory, list_intensity, q_step, data_point,
     Returns
     -------
     numpy.ndarray
-        Array of shape (data_point, 2), containing q values and intensities.
+        Shape of (data_point, 2). Simulated pattern as [q, intensity] pairs.
 
     Notes
     -----
-    Peaks are assigned to the nearest grid point. Peaks outside the grid
-    are assigned to an endpoint. If peaks share a grid point, the last
+    Peaks are assigned to the nearest grid point; peaks more than q_step
+    beyond the grid are dropped. If peaks share a grid point, the last
     intensity replaces earlier values. Normalization requires a nonzero
     maximum intensity.
     """
-    list_q_theory = np.asarray(list_q_theory)
+    diffraction_peaks = np.asarray(diffraction_peaks, dtype=float)
+    if diffraction_peaks.ndim == 1:
+        list_q_theory = diffraction_peaks
+        list_intensity = np.ones_like(list_q_theory)
+    elif diffraction_peaks.ndim == 2 and diffraction_peaks.shape[1] == 2:
+        list_q_theory = diffraction_peaks[:, 0]
+        list_intensity = diffraction_peaks[:, 1]
+    else:
+        raise ValueError("Input must be a 1D array of q values or an (N, 2) "
+                         "array of [q, intensity]")
     q_list = np.arange(data_point) * q_step
     list_inten = np.zeros_like(q_list)
-    if len(list_q_theory) != len(list_intensity):
-        raise ValueError("Number of q-values and intensities are not the same")
     max_inter_q = q_list[-1]
     max_theo_q = np.max(list_q_theory)
     if max_inter_q < max_theo_q:
         warnings.warn(f"\n\nThe generated pattern's maximum q {max_inter_q:3f} (1/A)"
                       f" is below the theoretical maximum {max_theo_q:3f} (1/A)\n"
                       f"with q-step {q_step:3f} and {data_point} data points. "
-                      f"Use an energy step of at least "
+                      f"Use a q-step of at least "
                       f"{max_theo_q / (data_point - 1):.4f}.\n")
     for i, q in enumerate(list_q_theory):
         diff = np.abs(q - q_list)
@@ -470,3 +552,55 @@ def make_diffraction_pattern(list_q_theory, list_intensity, q_step, data_point,
     if norm:
         list_inten = list_inten / np.max(list_inten)
     return np.asarray(list(zip(q_list, list_inten)))
+
+
+def q_to_two_theta(q, max_two_theta=90.0, return_energy=False):
+    """Convert q to equivalent 2theta using a specified maximum angle.
+
+    Parameters
+    ----------
+    q : float or array_like
+        Finite, nonnegative q values (2*pi/d) in angstrom^-1.
+        Accepts a scalar, 1D array, or 2D array; at least one value
+        must be positive.
+    max_two_theta : float, optional
+        Angle assigned to the largest q, in degrees, strictly between
+        0 and 180. Default is 90.
+    return_energy : bool, optional
+        Also return the reference energy in keV. Default is False.
+
+    Returns
+    -------
+    two_theta : float or numpy.ndarray
+        Equivalent angles in degrees, matching the input shape.
+    energy : float, optional
+        Reference energy in keV, returned if return_energy is True.
+
+    Notes
+    -----
+    A scalar q maps to max_two_theta. Pass the full q-map to use
+    one reference energy for all rows. Intensities are unchanged.
+    """
+    q = np.asarray(q, dtype=float)
+    if q.ndim > 2:
+        raise ValueError("q must be a scalar, 1D array, or 2D array.")
+    if q.size == 0 or np.any(~np.isfinite(q)) or np.any(q < 0):
+        raise ValueError("q must contain finite, nonnegative values.")
+
+    max_two_theta = float(max_two_theta)
+    if not np.isfinite(max_two_theta) or not 0 < max_two_theta < 180:
+        raise ValueError("max_two_theta must be between 0 and 180 degrees.")
+
+    q_max = np.max(q)
+    if q_max == 0:
+        raise ValueError("q must contain at least one positive value.")
+
+    sin_theta_max = np.sin(np.radians(max_two_theta / 2.0))
+    two_theta = np.degrees(2.0 * np.arcsin((q / q_max) * sin_theta_max))
+    if q.ndim == 0:
+        two_theta = float(two_theta)
+
+    if return_energy:
+        energy = 12.398 * q_max / (4.0 * np.pi * sin_theta_max)
+        return two_theta, float(energy)
+    return two_theta

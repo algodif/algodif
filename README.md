@@ -5,8 +5,8 @@ Methods and software for calibrating multi-element energy-dispersive X-ray (EDX)
 processing and visualizing energy-dispersive X-ray diffraction tomography (EDDT) data acquired 
 at a hard X-ray synchrotron beamline.
 
-A detailed description is provided in the paper under review: "Algorithms and software tools for 
-energy-dispersive X-ray diffraction tomography," Nghia T. Vo, Zhong Zhong, and Michael Drakopoulos. 
+A detailed description is provided in the paper: "Algorithms and software tools for 
+energy-dispersive X-ray diffraction tomography," Journal of Synchrotron Radiation. 
 
 The core of this work is to address a problem: 
 given a list of measured data points not knowing unit, how to map that into a list of reference points 
@@ -26,6 +26,7 @@ Features
 - Methods for matching measured peaks to reference peaks.
 - Methods for energy calibration of an EDX detector.
 - Methods for q-calibration of an EDX detector and the GeRM detector.
+- GUIs for energy calibration and q-calibration.
 - GUIs/CLIs for processing and visualizing EDDT data from the GeRM detector. 
 
 Installation
@@ -120,16 +121,23 @@ methods are provided in the referenced paper and the source code.
 User interface software
 -----------------------
 
-We provide separate GUIs for different workflows and visualization tasks. Although combining 
+We provide separate GUIs for calibration, data processing workflows and visualization tasks. Although combining 
 everything into a single GUI may seem appealing, we chose a modular approach to simplify 
 maintenance and accommodate the diverse needs of beamline operations. These tools ([Python scripts](https://github.com/algodif/algodif/tree/main/GUIs_CLIs)) 
 can be organized and launched through the [script-runner GUI](https://pypi.org/project/scriptrunner-gui/). 
+
+![img](./figs/energy_calib_GUI.png)
+
+![img](./figs/q_calib_GUI.png)
 
 ![img](https://github.com/algodif/algodif/raw/main/figs/eddt_gui.png)
 
 ![multi_lines_viewer](https://github.com/algodif/algodif/raw/main/GUIs_CLIs/figs/fig5_multi_lines_viewer.png)
 
 ![4d_viewer](https://github.com/algodif/algodif/raw/main/GUIs_CLIs/figs/fig8_4d_rendering.png)
+
+A unified GUI for energy and q calibration is packaged and distributed as EDCal software: 
+https://github.com/algodif/edcal 
 
 Author
 ------

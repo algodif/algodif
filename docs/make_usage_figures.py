@@ -35,7 +35,7 @@ DPI = 80
 ENERGY_FILE1 = DATA / "Pb_Au_Sn_calibration.tif"
 ENERGY_FILE2 = DATA / "U_calibration.tif"
 Q_FILE = DATA / "Cr2O3_6_degree_GeRM.tif"
-PEARSON_FILE = DATA / "Pearson_Crystal_Data_Cr2O3.csv"
+CALIBRANT = "Cr2O3"
 ELEMENTS = ["Sn", "Au", "Pb", "U"]
 ENERGY_BIN = 0.0538357407779  # keV
 TWO_THETA = 6.0  # Degree
@@ -188,12 +188,11 @@ def get_reference_energies(energy_bin, width):
 
 
 def get_reference_pattern(q_step, width, num_use, threshold):
-    list_d_inten = losa.load_d_spacing_from_pearson_crystal_data_file(
-        PEARSON_FILE, num_use=num_use, threshold=threshold, check=False)
-    d_spacing_values = list_d_inten[:, 0]
-    q_values_ref = 2 * np.pi / d_spacing_values
-    pattern = util.make_diffraction_pattern(q_values_ref, list_d_inten[:, 1],
-                                            q_step, width, sigma=7)
+    peaks = util.get_calibrant_diffraction_pattern(
+        CALIBRANT, num_use=num_use, threshold=threshold, check=False)
+    q_values_ref = peaks[:, 0]
+    d_spacing_values = 2 * np.pi / q_values_ref
+    pattern = util.make_diffraction_pattern(peaks, q_step, width, sigma=7)
     ref_peaks = prep.get_peaks_by_ranked_descent(pattern[:, 1], width=5,
                                                  ratio=0.1, sigma=0)
     return d_spacing_values, q_values_ref, pattern, ref_peaks
@@ -367,7 +366,7 @@ def demo_04():
     q_step = util.estimate_q_step_germ_detector(0, ENERGY_BIN, TWO_THETA,
                                                 **GEOMETRY)
     d_spacing_values, q_values_ref, pattern, ref_peaks = \
-        get_reference_pattern(q_step, width, num_use=16, threshold=35)
+        get_reference_pattern(q_step, width, num_use=16, threshold=3.5)
     save_peaks_plot(demo, "fig2.png", pattern[:, 0], pattern[:, 1],
                     ref_peaks, "Diffraction pattern of Cr2O3 and peaks used "
                                "for calibration", x_label="Q (1/A)")
@@ -404,7 +403,7 @@ def demo_05():
     q_step = util.estimate_q_step_germ_detector(0, ENERGY_BIN, TWO_THETA,
                                                 **GEOMETRY)
     d_spacing_values, _, pattern, _ = get_reference_pattern(
-        q_step, width, num_use=18, threshold=35)
+        q_step, width, num_use=18, threshold=3.5)
     extent = [0, q_step * (width - 1), height, 0]
     ref_image = np.tile(pattern[:, 1], (height, 1)) * 2000
     save_two_log_images(demo, "fig1.png", image, ref_image,
@@ -436,7 +435,7 @@ def demo_06():
     image = losa.load_image(Q_FILE)
     (height, width) = image.shape
     _, q_values_ref, pattern, ref_peaks = get_reference_pattern(
-        0.0015, width, num_use=16, threshold=35)
+        0.0015, width, num_use=20, threshold=3.5)
     list_inten_ref = pattern[:, 1]
 
     meas_pattern = prep.smooth_filter_based_svd(image[strip_idx], **SVD_PARA)
@@ -445,13 +444,13 @@ def demo_06():
     sub_peaks_meas = prep.locate_gaussian_peaks_subpixel(meas_pattern, peaks,
                                                          radius=15, sigma=1,
                                                          skew_fit=True)
-    meas_peaks_5_idx = np.argsort(meas_pattern[peaks])[-5:][::-1]
-    top5_meas_peaks = peaks[meas_peaks_5_idx]
-    ref_peaks_5_idx = np.argsort(list_inten_ref[ref_peaks])[-5:][::-1]
-    top5_ref_peaks = ref_peaks[ref_peaks_5_idx]
+    meas_peaks_3_idx = np.argsort(meas_pattern[peaks])[-3:][::-1]
+    top3_meas_peaks = peaks[meas_peaks_3_idx]
+    ref_peaks_3_idx = np.argsort(list_inten_ref[ref_peaks])[-3:][::-1]
+    top3_ref_peaks = ref_peaks[ref_peaks_3_idx]
     for name, meas_p, ref_p, label in (
             ("fig1.png", peaks, ref_peaks, "located peaks"),
-            ("fig2.png", top5_meas_peaks, top5_ref_peaks, "top 5 peaks")):
+            ("fig2.png", top3_meas_peaks, top3_ref_peaks, "top 3 peaks")):
         fig, axes = plt.subplots(1, 2, figsize=FIG_SIZE)
         axes[0].plot(np.arange(width), meas_pattern, color="blue")
         axes[0].plot(np.arange(width)[meas_p], meas_pattern[meas_p], "o",
@@ -470,10 +469,8 @@ def demo_06():
         save_fig(fig, demo, name)
 
     list_q_ref = pattern[:, 0][ref_peaks]
-    pixel_distance = abs(sub_peaks_meas[meas_peaks_5_idx[1]]
-                         - sub_peaks_meas[meas_peaks_5_idx[2]])
-    q_distance = abs(list_q_ref[ref_peaks_5_idx][0]
-                     - list_q_ref[ref_peaks_5_idx][3])
+    pixel_distance = np.ptp(sub_peaks_meas[meas_peaks_3_idx])
+    q_distance = np.ptp(list_q_ref[ref_peaks_3_idx])
     q_step = q_distance / pixel_distance
     print(f"Measured q-step: {q_step}")
 
@@ -504,7 +501,7 @@ def demo_07():
                    for idx in range(height)]
     q_step = np.max(q_step_list)
     _, q_values_ref, pattern, _ = get_reference_pattern(
-        q_step, width, num_use=21, threshold=25)
+        q_step, width, num_use=21, threshold=2.5)
     extent = [0, q_step * (width - 1), height, 0]
     ref_image = np.tile(pattern[:, 1], (height, 1)) * 2000
     save_two_log_images(demo, "fig1.png", image, ref_image,

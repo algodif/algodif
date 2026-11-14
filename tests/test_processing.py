@@ -190,9 +190,7 @@ class ProcessingMethods(unittest.TestCase):
             np.deg2rad(two_theta / 2.0)) / 12.398) * energy_step
         # est_energy = 12.398 / (2 * self.cr2o3_d_spacing * np.sin(
         #     np.deg2rad(two_theta / 2.0)))
-        intensities = np.ones_like(self.cr2o3_q_vals)
-        ref_pattern = util.make_diffraction_pattern(self.cr2o3_q_vals,
-                                                    intensities, q_step,
+        ref_pattern = util.make_diffraction_pattern(self.cr2o3_q_vals, q_step,
                                                     width, sigma=15,
                                                     norm=True)
         poly_coefs_2_deg = [0.00001, 0.95, 20]
@@ -214,7 +212,6 @@ class ProcessingMethods(unittest.TestCase):
         self.assertTrue(rmse < 0.05)
 
     def test_calibrate_q_germ_detector_image(self):
-        intensities = np.ones_like(self.cr2o3_q_vals)
         two_theta = 3.0
         energy_step = 0.054
         total_germ_strip = 192
@@ -234,8 +231,7 @@ class ProcessingMethods(unittest.TestCase):
             two_theta_idx = (two_theta_rad - np.arctan(num1 / num2))
             q_step = ((4 * np.pi * np.sin(
                 two_theta_idx / 2) * energy_step) / 12.398)
-            results = util.make_diffraction_pattern(self.cr2o3_q_vals,
-                                                    intensities, q_step,
+            results = util.make_diffraction_pattern(self.cr2o3_q_vals, q_step,
                                                     width, sigma=11,
                                                     norm=True)
             q_map[strip_idx - start_idx] = results[:, 0]
@@ -281,9 +277,7 @@ class ProcessingMethods(unittest.TestCase):
         two_theta = 3.0
         q_step = (4.0 * np.pi * np.sin(
             np.deg2rad(two_theta / 2.0)) / 12.398) * energy_step
-        intensities = np.ones_like(self.cr2o3_q_vals)
-        ref_pattern = util.make_diffraction_pattern(self.cr2o3_q_vals,
-                                                    intensities, q_step,
+        ref_pattern = util.make_diffraction_pattern(self.cr2o3_q_vals, q_step,
                                                     width, sigma=15,
                                                     norm=True)
         poly_coefs_2_deg = [0.00001, 0.95, 20]
@@ -304,7 +298,6 @@ class ProcessingMethods(unittest.TestCase):
         self.assertTrue(rmse < 0.05)
 
     def test_calibrate_q_image(self):
-        intensities = np.ones_like(self.cr2o3_q_vals)
         two_theta = 3.0
         energy_step = 0.054
         total_germ_strip = 192
@@ -326,8 +319,7 @@ class ProcessingMethods(unittest.TestCase):
             q_step = ((4 * np.pi * np.sin(
                 two_theta_idx / 2) * energy_step) / 12.398)
             q_step_list.append(q_step)
-            results = util.make_diffraction_pattern(self.cr2o3_q_vals,
-                                                    intensities, q_step,
+            results = util.make_diffraction_pattern(self.cr2o3_q_vals, q_step,
                                                     width, sigma=11,
                                                     norm=True)
             q_map[strip_idx - start_idx] = results[:, 0]

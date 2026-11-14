@@ -47,3 +47,6 @@ Source = "https://github.com/algodif/algodif"
 
 [tool.setuptools.packages.find]
 include = ["algodif", "algodif.*"]
+
+[tool.setuptools.package-data]
+algodif = ["calibrants/*.csv"]

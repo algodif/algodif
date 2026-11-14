@@ -3,9 +3,12 @@ Tests for methods in loadersaver.py
 """
 
 import os
+import io
 import json
 import shutil
+import zipfile
 import unittest
+from contextlib import redirect_stdout
 from collections import deque
 from pathlib import Path
 import h5py
@@ -18,6 +21,7 @@ import algodif.io.loadersaver as losa
 class LoaderSaverMethods(unittest.TestCase):
     tmp_root = "./tmp_loadersaver"
     tmp_dir = tmp_root + "/data"
+    test_data_dir = Path(__file__).resolve().parent / "data_for_tests"
 
     @classmethod
     def setUpClass(cls):
@@ -437,3 +441,160 @@ class LoaderSaverMethods(unittest.TestCase):
 
         self.assertRaises(ValueError, losa.save_csv, file_path, "abc")
         self.assertRaises(ValueError, losa.save_csv, file_path, (1, 2))
+
+    def test_save_xy(self):
+        x_map = np.tile(np.linspace(0.1, 5.0, 16), (4, 1))
+        image = np.random.rand(4, 16)
+        names_xy = [f"strip_{i:03d}.xy" for i in range(4)]
+        names_csv = [f"strip_{i:03d}.csv" for i in range(4)]
+
+        file_path = f"{self.tmp_dir}/save_xy/data"
+        path = losa.save_xy(file_path, x_map, image)
+        self.assertEqual(Path(path).suffix, ".zip")
+        self.assertTrue(os.path.isfile(path))
+        with zipfile.ZipFile(path) as archive:
+            self.assertEqual(sorted(archive.namelist()), names_xy)
+            data = np.loadtxt(
+                archive.read("strip_002.xy").decode().splitlines())
+        self.assertTrue(np.allclose(data[:, 0], x_map[2]))
+        self.assertTrue(np.allclose(data[:, 1], image[2]))
+
+        path2 = losa.save_xy(file_path, x_map, image, overwrite=False)
+        self.assertTrue(Path(path2) != Path(path))
+        self.assertTrue(os.path.isfile(path2))
+
+        path = losa.save_xy(f"{self.tmp_dir}/save_xy/data_csv.zip", x_map,
+                            image, file_type="csv")
+        with zipfile.ZipFile(path) as archive:
+            self.assertEqual(sorted(archive.namelist()), names_csv)
+            data = np.loadtxt(
+                archive.read("strip_001.csv").decode().splitlines(),
+                delimiter=",")
+        self.assertTrue(np.allclose(data[:, 1], image[1]))
+
+        path = losa.save_xy(f"{self.tmp_dir}/save_xy/folder.xy", x_map,
+                            image, zip_file=False)
+        self.assertEqual(Path(path).name, "folder")
+        self.assertTrue(os.path.isdir(path))
+        self.assertEqual(sorted(os.listdir(path)), names_xy)
+        data = np.loadtxt(os.path.join(path, "strip_003.xy"))
+        self.assertTrue(np.allclose(data[:, 0], x_map[3]))
+        self.assertTrue(np.allclose(data[:, 1], image[3]))
+
+        path2 = losa.save_xy(path, x_map, image, zip_file=False,
+                             overwrite=False)
+        self.assertTrue(Path(path2) != Path(path))
+        self.assertTrue(os.path.isdir(path2))
+
+        path = losa.save_xy(f"{self.tmp_dir}/save_xy/folder_csv", x_map,
+                            image, file_type="csv", zip_file=False)
+        self.assertEqual(sorted(os.listdir(path)), names_csv)
+        data = np.loadtxt(os.path.join(path, "strip_000.csv"), delimiter=",")
+        self.assertTrue(np.allclose(data[:, 1], image[0]))
+
+        self.assertRaises(ValueError, losa.save_xy, file_path, x_map, image,
+                          file_type="txt")
+        self.assertRaises(ValueError, losa.save_xy, file_path, x_map,
+                          image[:2])
+        self.assertRaises(ValueError, losa.save_xy, file_path, x_map[0],
+                          image[0])
+
+    def test_convert_vesta_to_csv(self):
+        vesta_file = self.test_data_dir / "Cr2O3.txt"
+        raw = np.loadtxt(vesta_file, skiprows=1, usecols=(3, 8),
+                         encoding="utf-8-sig")
+        raw = raw[raw[:, 0] != 0]
+        output = f"{self.tmp_dir}/vesta/Cr2O3.csv"
+        path = losa.convert_vesta_to_csv(vesta_file, output)
+        self.assertTrue(isinstance(path, str) and os.path.isfile(path))
+        with open(path, "r") as f:
+            self.assertEqual(f.readline().strip(),
+                             "q_A^-1,intensity_normalized")
+        data = np.loadtxt(path, delimiter=",", skiprows=1)
+        self.assertEqual(data.shape, (len(raw), 2))
+        self.assertTrue(np.all(np.diff(data[:, 0]) >= 0))
+        self.assertTrue(np.isclose(np.max(data[:, 1]), 100.0))
+        self.assertTrue(np.isclose(data[0, 0], 2 * np.pi / np.max(raw[:, 0])))
+        idx = np.argmax(raw[:, 1])
+        q_max_inten = data[np.argmax(data[:, 1]), 0]
+        self.assertTrue(np.isclose(q_max_inten, 2 * np.pi / raw[idx, 0]))
+
+        # Default output goes next to the input, so use a copy in tmp_dir.
+        vesta_copy = f"{self.tmp_dir}/vesta/copy.txt"
+        shutil.copy(vesta_file, vesta_copy)
+        path = losa.convert_vesta_to_csv(vesta_copy)
+        self.assertEqual(Path(path).name, "copy.csv")
+        self.assertTrue(os.path.isfile(path))
+
+        path = losa.convert_vesta_to_csv(vesta_file,
+                                         f"{self.tmp_dir}/vesta/out.dat")
+        self.assertEqual(Path(path).suffix, ".csv")
+        self.assertTrue(os.path.isfile(path))
+
+        header = "h k l d F(real) F(imag) |F| 2theta I M\n"
+        mixed_file = f"{self.tmp_dir}/vesta/zero_d.txt"
+        with open(mixed_file, "w", encoding="utf-8") as f:
+            f.write(header + "0 0 0 0.0 1 0 1 0.0 80.0 1\n"
+                    + "1 0 0 2.0 1 0 1 10.0 40.0 6\n")
+        path = losa.convert_vesta_to_csv(mixed_file)
+        data = np.loadtxt(path, delimiter=",", skiprows=1, ndmin=2)
+        self.assertTrue(np.allclose(data, [[np.pi, 100.0]]))
+
+        bad_rows = {"bad_d.txt": "1 0 0 0.0 1 0 1 10.0 50.0 6\n",
+                    "neg_d.txt": "1 0 0 -2.0 1 0 1 10.0 50.0 6\n",
+                    "bad_inten.txt": "1 0 0 2.0 1 0 1 10.0 -5.0 6\n",
+                    "zero_inten.txt": "1 0 0 2.0 1 0 1 10.0 0.0 6\n"}
+        for name, row in bad_rows.items():
+            bad_file = f"{self.tmp_dir}/vesta/{name}"
+            with open(bad_file, "w", encoding="utf-8") as f:
+                f.write(header + row)
+            self.assertRaises(ValueError, losa.convert_vesta_to_csv,
+                              bad_file)
+        self.assertRaises(ValueError, losa.convert_vesta_to_csv,
+                          f"{self.tmp_dir}/vesta/not_exist.txt")
+
+    def test_load_d_spacing_from_vesta_file(self):
+        f_alias = losa.load_d_spacing_from_vesta_file
+        file_path = self.test_data_dir / "Cr2O3.txt"
+        # Reflections in Cr2O3.txt with intensity above 35 (max is 100).
+        d_expected = [3.631895, 2.665959, 2.480350, 1.815948, 1.673162,
+                      1.465227, 1.432031]
+        i_expected = [59.26184, 91.69583, 87.15836, 41.18903, 100.0,
+                      36.89734, 48.72557]
+        results = f_alias(file_path, check=False)
+        self.assertTrue(np.allclose(results[:, 0], d_expected))
+        self.assertTrue(np.allclose(results[:, 1],
+                                    np.array(i_expected) / 100.0))
+
+        results = f_alias(str(file_path), norm=False, check=False)
+        self.assertTrue(np.allclose(results[:, 1], i_expected))
+
+        results = f_alias(file_path, num_use=3, check=False)
+        self.assertTrue(np.allclose(results[:, 0], d_expected[:3]))
+        self.assertTrue(np.allclose(results[:, 1],
+                                    np.array(i_expected[:3]) / 91.69583))
+
+        results = f_alias(file_path, threshold=20, check=False)
+        self.assertTrue(np.allclose(results[:, 0],
+                                    [3.631895, 2.665959, 2.480350, 2.175912,
+                                     1.815948, 1.673162, 1.465227, 1.432031,
+                                     1.087956]))
+
+        results = f_alias(file_path, threshold=100, check=False)
+        self.assertEqual(results.shape, (0, 2))
+
+        # Symmetry-equivalent reflections (e.g. 0 3 6 and 3 0 6) are merged.
+        results = f_alias(file_path, num_use=10000, threshold=0, norm=False,
+                          check=False)
+        self.assertEqual(len(np.unique(results, axis=0)), len(results))
+        self.assertEqual(np.sum(np.isclose(results[:, 0], 1.210632)), 1)
+
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            f_alias(file_path, check=True)
+        lines = buffer.getvalue().strip().splitlines()
+        self.assertEqual(len(lines), len(d_expected))
+        self.assertTrue("q-value" in lines[0] and "d-spacing" in lines[0])
+
+        self.assertRaises(ValueError, f_alias,
+                          f"{self.tmp_dir}/vesta_d/not_exist.txt")
