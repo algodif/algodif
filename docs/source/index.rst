@@ -7,7 +7,7 @@ Algodif is an open-source Python package providing methods and software for
 calibrating multi-element energy-dispersive X-ray (EDX) detectors, and for
 processing and visualizing energy-dispersive X-ray diffraction tomography
 (EDDT) data acquired at a hard X-ray synchrotron beamline. A detailed
-description is provided in the paper :cite:`Vo:2026` (under review).
+description is provided in the paper :cite:`Vo:2026`.
 
 The core of this work addresses the following problem: given a list of
 measured data points of unknown unit, how to map them onto a list of reference

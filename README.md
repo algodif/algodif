@@ -126,9 +126,9 @@ everything into a single GUI may seem appealing, we chose a modular approach to 
 maintenance and accommodate the diverse needs of beamline operations. These tools ([Python scripts](https://github.com/algodif/algodif/tree/main/GUIs_CLIs)) 
 can be organized and launched through the [script-runner GUI](https://pypi.org/project/scriptrunner-gui/). 
 
-![img](./figs/energy_calib_GUI.png)
+![img](https://github.com/algodif/algodif/raw/main/figs/energy_calib_GUI.png)
 
-![img](./figs/q_calib_GUI.png)
+![img](https://github.com/algodif/algodif/raw/main/figs/q_calib_GUI.png)
 
 ![img](https://github.com/algodif/algodif/raw/main/figs/eddt_gui.png)
 
