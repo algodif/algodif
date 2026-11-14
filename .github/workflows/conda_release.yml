@@ -3,38 +3,47 @@ name: Publish to Conda
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   publish_conda:
     name: Build and Upload to Conda
     runs-on: ubuntu-latest
 
+    defaults:
+      run:
+        shell: bash -el {0}
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
 
-      - name: Set up Miniconda
-        uses: conda-incubator/setup-miniconda@v2
+      - name: Set up Conda
+        uses: conda-incubator/setup-miniconda@v4
         with:
-          auto-update-conda: true
+          miniforge-version: latest
           python-version: "3.11"
-          channels: conda-forge,defaults
+          activate-environment: build
+          channels: conda-forge
+          channel-priority: strict
 
       - name: Install Conda Build Tools
         run: |
           conda install -y conda-build anaconda-client conda-verify
-          conda config --add channels conda-forge
 
       - name: Build Conda Package
-        run: conda build -c conda-forge recipe/
+        run: |
+          conda build --no-anaconda-upload -c conda-forge recipe/
 
-      - name: Get Package Path
-        run: echo "PACKAGE_PATH=$(conda build --output recipe/)" >> $GITHUB_ENV
+      - name: Get Package Paths
+        run: |
+          conda build --output -c conda-forge recipe/ > package-paths.txt
 
       - name: Upload to Anaconda Cloud
         env:
           ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_API_TOKEN }}
         run: |
-          source $(conda info --base)/etc/profile.d/conda.sh
-          conda activate base
-          which anaconda
-          anaconda upload --user algotom $PACKAGE_PATH
+          while IFS= read -r package_path; do
+            anaconda upload --user algotom "$package_path"
+          done < package-paths.txt
